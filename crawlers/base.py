@@ -1,4 +1,4 @@
-"""爬虫基类：Playwright 持久化上下文 + 反爬基础处理 + XHR拦截"""
+"""爬虫基类：隔离的查询上下文、账号持久会话与 XHR 拦截。"""
 import os
 import sys
 import re
@@ -17,6 +17,8 @@ from playwright.sync_api import sync_playwright, BrowserContext, Page, Response
 from core.models import PRICE_MAX, PRICE_MIN, FlightPrice
 from core.intl import tz_offset_min
 from core.pacing import parse_retry_after, should_watch_response
+from core.paths import resolve
+from core.query_sessions import anonymous_query_enabled
 
 from .challenge import ChallengeContext, install_navigation_guard
 from . import stealth_ext
@@ -887,6 +889,7 @@ class BaseCrawler:
     def __init__(self, config: dict, logger: logging.Logger):
         self.config = config
         self.logger = logger
+        self.anonymous_query = anonymous_query_enabled(config)
         self.headless: bool = config.get("headless", True)
         # 用户主动探针可复用可见会话取明细；定时监控不弹窗。
         self.probe_mode: bool = False
@@ -902,7 +905,7 @@ class BaseCrawler:
         # 没有循环导入风险；留一份同样的字面量只会让"唯一口径"名存实亡。
         from core.yield_stats import user_data_root
         self.user_data_root = os.path.abspath(
-            os.path.join(_REPO_ROOT, user_data_root(config)))
+            resolve(user_data_root(config)))
         # 可选本地代理（r319，如 Clash http://127.0.0.1:7897）：浏览器与
         # httpx 采集面统一走它，让出口 IP 可变（IP 级限流绕行）。注意
         # 国内站+境外出口=风控风险升档，建议国内直落节点或负载均衡组
@@ -957,6 +960,8 @@ class BaseCrawler:
                             "session-state.json")
 
     def _read_session_state(self) -> dict:
+        if self.anonymous_query:
+            return {}
         try:
             with open(self.session_state_path, encoding="utf-8") as f:
                 state = json.load(f)
@@ -982,12 +987,16 @@ class BaseCrawler:
     @property
     def session_saved_at(self) -> float:
         """明确确认登录并保存的时刻；旧 profile 迁移不算重新登录。"""
+        if self.anonymous_query:
+            return 0.0
         try:
             return float(self._read_session_state().get("saved_at") or 0)
         except (TypeError, ValueError):
             return 0.0
 
     def _write_session_state(self, state: dict, saved_at: float):
+        if self.anonymous_query:
+            raise ValueError("匿名查询不允许保存账号会话快照")
         state = dict(state, saved_at=saved_at)
         tmp = None
         try:
@@ -1067,7 +1076,8 @@ class BaseCrawler:
     def _should_refresh_snapshot(self, save_session) -> bool:
         """采集态是否回写快照（沿用 saved_at，不冒充重新登录）。"""
         return bool(
-            save_session is None
+            not self.anonymous_query
+            and save_session is None
             and self.session_saved_at > 0
             and getattr(self, "AUTH_COOKIES", ()))
 
@@ -1079,7 +1089,7 @@ class BaseCrawler:
         会话弄丢。采集态同理：登出态不覆盖。
         migrate 是旧 profile 迁移，不要求认证。
         """
-        if not state:
+        if self.anonymous_query or not state:
             return False
         if save_session in (None, "login"):
             return self._state_has_auth(state)
@@ -1087,6 +1097,9 @@ class BaseCrawler:
 
     def load_session_cookies(self, domains=None) -> list:
         """读取最新快照，保留 Cookie 的域、路径和期限，不缓存认证值。"""
+        # 匿名请求明确不导入账号 Cookie，也不触发旧 profile 迁移。
+        if self.anonymous_query:
+            return []
         if not os.path.isfile(self.session_state_path) and os.path.isdir(
                 os.path.join(self.user_data_root, self.name, "Default")):
             # 既有用户无需重登：首次 HTTP 采集导出 Chromium 已存会话。
@@ -1222,7 +1235,12 @@ class BaseCrawler:
     def browser(self, headless: Optional[bool] = None,
                 window_front: bool = False, window_idx: int = 0,
                 save_session: Optional[str] = None):
-        """启动持久化浏览器上下文。headless=None 时使用配置。"""
+        """匿名使用内存上下文，账号使用加锁的持久化上下文。"""
+        if self.anonymous_query:
+            with self._browser_context(headless, window_front, window_idx,
+                                       save_session) as ctx:
+                yield ctx
+            return
         path = os.path.normcase(os.path.realpath(self.user_data_dir))
         with _PROFILE_LOCKS_GUARD:
             lock = _PROFILE_LOCKS.setdefault(path, threading.Lock())
@@ -1278,6 +1296,9 @@ class BaseCrawler:
         否则 H5 通路还在读 PC profile —— 用户登两次却只用一次。
         只在目标 profile **确有会话**时才切，避免把已登录的 PC 态切丢。
         """
+        if self.anonymous_query:
+            yield self
+            return
         old = self.profile_name
         switched = False
         try:
@@ -1297,85 +1318,91 @@ class BaseCrawler:
                 self.profile_name = old
 
     @contextmanager
+    def _launched_context(self, chromium, launch_options, context_options):
+        browser = None
+        ctx = None
+        try:
+            if self.anonymous_query:
+                browser = chromium.launch(**launch_options)
+                ctx = browser.new_context(**context_options)
+            else:
+                ctx = chromium.launch_persistent_context(
+                    user_data_dir=self.user_data_dir,
+                    **launch_options, **context_options)
+            yield ctx
+        finally:
+            try:
+                if ctx is not None:
+                    # 现场须在同一个同步线程、上下文关闭前保存。
+                    try:
+                        if self._scene_pending:
+                            self.capture_scene(self._last_page, tag="block")
+                    except Exception as e:
+                        self.logger.warning("[%s] 失败现场保存失败: %s", self.name, e)
+                    ctx.close()
+            finally:
+                # new_context 或 ctx.close 失败时也必须释放匿名浏览器。
+                if browser is not None:
+                    browser.close()
+
+    @contextmanager
     def _browser_context(self, headless, window_front, window_idx, save_session):
+        if self.anonymous_query and save_session is not None:
+            raise ValueError("匿名查询不能保存或迁移登录会话；请使用账号角色")
         hl = self.headless if headless is None else headless
         fp = self.fingerprint()
         with sync_playwright() as p:
             x, y = 40 + window_idx * 170, 24 + window_idx * 150
             launch_args = [f"--window-position={x},{y}"]
             if window_front:
-                # r1063 T140：登录窗口尺寸可配，且按端给默认值
-                # （PC 1280×900 够看表格；H5 480×880 是手机比例，点得到）
                 _w, _h = self.login_window_size()
-                try:
-                    self.logger.info(
-                        "[登录窗] %s 端=%s 尺寸=%dx%d",
-                        self.name,
-                        (getattr(self, "login_surface", "") or "（未标注）"),
-                        _w, _h)
-                except Exception:
-                    pass
+                self.logger.info(
+                    "[登录窗] %s 端=%s 尺寸=%dx%d", self.name,
+                    (getattr(self, "login_surface", "") or "（未标注）"), _w, _h)
                 launch_args += [f"--window-size={_w},{_h}",
                                 f"--window-position={x},{y}"]
-            # 旁路关闭（WebRTC 内网 IP 泄漏等）：不改页面行为，只掐泄漏面。
-            # 与 STEALTH_JS 同一条开关，stealth=false 时零干预。
             launch_args += stealth_ext.launch_args(fp)
-            # 可选启动参数（当前只有 channel）：单独走 `**_kw`；代理那行必须
-            # 保持原字面量——test_r319_proxy 用源码钉住它，防止有人顺手把
-            # 「出口统一」删掉（那是 IP 级限流的唯一开关）。
-            _kw = {}
-            # 可选：用系统真 Chrome（crawler.browser_channel: chrome）。
-            # 默认空=沿用自带 Chromium，不改变任何既有行为。
-            _chan = stealth_ext.channel(self.config)
-            if _chan:
-                _kw["channel"] = _chan
-            ctx = p.chromium.launch_persistent_context(
-                user_data_dir=self.user_data_dir,
+            # launch 与 new_context 接受的参数不同，两种角色共用同一组取值。
+            launch_options = dict(
                 headless=hl,
-                user_agent=fp["ua"],
-                viewport=fp["viewport"],
-                locale=fp["locale"],
-                timezone_id=fp["timezone"],
-                is_mobile=fp["is_mobile"],
-                has_touch=fp["has_touch"],
-                # 可选本地代理（r319）：全部渠道采集出口统一走它
                 proxy=({"server": fp["proxy"]} if fp["proxy"] else None),
                 args=launch_args + [
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
+                    "--no-sandbox", "--disable-dev-shm-usage",
                 ] + (["--disable-blink-features=AutomationControlled"]
                      if fp["stealth"] else []),
-                **_kw,
             )
-            if fp["stealth"]:
-                try:
-                    # 种子按 profile 固定：同一档案跨重启指纹一致（像真人），
-                    # 不同档案互不相同（不把多个身份缝成同一个）
-                    _rep = stealth_replacements(fp)
-                    _js = STEALTH_JS
-                    for _k, _v in _rep.items():
-                        _js = _js.replace(_k, _v)
-                    # 补齐层（WebRTC/音频/设备枚举/chrome 子对象/外框尺寸）：
-                    # **拼进同一个 init script**，不上第二个 add_init_script——
-                    # 「stealth 开时恰好 1 个脚本」是既有测试钉住的契约。
-                    _ext = stealth_ext.extra_js(fp)
-                    if _ext:
-                        _js = _js + "\n" + _ext
-                    ctx.add_init_script(_js)
-                except Exception as _ste:
-                    # 记账（r1063 T61）：伪装脚本没注进去 = **整个 stealth 失效**，
-                    # 页面依旧是自动化特征。以前这里只有 pass。
-                    try:
-                        from core import degraded as _dg
-                        _dg.note("stealth_init", str(self.name),
-                                 "注入伪装脚本失败：%s" % str(_ste)[:80])
-                    except Exception:
-                        pass
+            _chan = stealth_ext.channel(self.config)
+            if _chan:
+                launch_options["channel"] = _chan
+            context_options = dict(
+                user_agent=fp["ua"], viewport=fp["viewport"],
+                locale=fp["locale"], timezone_id=fp["timezone"],
+                is_mobile=fp["is_mobile"], has_touch=fp["has_touch"],
+            )
             state = None
-            try:
-                # Chromium 重开可能丢弃 expires=-1 的会话 Cookie；快照
-                # 只补缺失/更旧的键，不覆盖档案里更新的持久 Cookie。
-                if os.path.isfile(self.session_state_path):
+            with self._launched_context(
+                    p.chromium, launch_options, context_options) as ctx:
+                if fp["stealth"]:
+                    try:
+                        _rep = stealth_replacements(fp)
+                        _js = STEALTH_JS
+                        for _k, _v in _rep.items():
+                            _js = _js.replace(_k, _v)
+                        # 保持一个 init script，保证脚本执行顺序固定。
+                        _ext = stealth_ext.extra_js(fp)
+                        if _ext:
+                            _js = _js + "\n" + _ext
+                        ctx.add_init_script(_js)
+                    except Exception as _ste:
+                        self.logger.warning("[%s] 注入伪装脚本失败: %s", self.name, _ste)
+                        try:
+                            from core import degraded as _dg
+                            _dg.note("stealth_init", str(self.name),
+                                     "注入伪装脚本失败：%s" % str(_ste)[:80])
+                        except Exception:
+                            pass
+                # 匿名上下文不检查快照文件，也不从持久资料恢复 Cookie。
+                if not self.anonymous_query and os.path.isfile(self.session_state_path):
                     saved = self.load_session_cookies()
                     if saved:
                         plan = self._restore_plan(ctx.cookies(), saved)
@@ -1394,42 +1421,26 @@ class BaseCrawler:
                                     _by_name.append(_c)
                                 ctx.add_cookies(_by_name)
                 yield ctx
-                # 采集成功后回写一次快照（沿用原 saved_at，不代表重新
-                # 登录）：否则短命会话 Cookie 只停留在登录那一刻，进程
-                # 重启后快照已过期，表现成「过一会又要登录」。
+                if self.anonymous_query:
+                    return
+                # 账号采集续写短命 Cookie 时保留原登录时间。
                 _refresh = self._should_refresh_snapshot(save_session)
                 try:
                     state = (ctx.storage_state()
                              if (save_session or _refresh) else None)
                 except Exception as e:
-                    # 验证窗口关得太快时上下文可能已经关闭；若周期快照
-                    # 已成功，可以安全忽略收尾失败。登录窗口没有任何快照
-                    # 成功过时必须抛出——否则会把"没保存"报成"已保存"。
                     if save_session == "login" and not self._session_snap_ok:
                         raise
                     state = None
                     if save_session:
                         self.logger.warning("[%s] 会话收尾快照失败: %s",
                                             self.name, e)
-            finally:
-                # 被拒页面在关上下文前落盘：同一个采集线程、同一个 page，
-                # 是 Playwright sync 唯一安全的截图时机
-                try:
-                    if self._scene_pending:
-                        self.capture_scene(self._last_page, tag="block")
-                except Exception:
-                    pass
-                ctx.close()
             # 保存、关闭、发布必须全部成功，调用方才能报告登录已保存。
             if state is not None:
                 if not self._session_state_allowed(state, save_session):
                     if save_session == "login":
-                        # 用户点了“我已登录完成”，但快照里没有登录凭证：
-                        # 不能把登出态写成刚登录，也不覆盖旧快照。
                         raise RuntimeError(
                             "未检测到登录凭证（AUTH_COOKIES），未覆盖旧快照")
-                    # 采集回写只在认证 Cookie 仍在场时发生：已掉登录的
-                    # 状态不覆盖上一份可用快照。
                     state = None
                 if state is not None:
                     saved_at = (time.time() if save_session == "login"

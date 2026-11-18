@@ -11,6 +11,10 @@ from typing import List, Optional
 from .models import FlightPrice, Route, price_band_ok, render_dir
 from .flightnorm import _hhmm, _dur_min, cabin_clean, cabin_class
 from .airlines import resolve_codes
+from .final_alerts import (alert_state_key, flight_reminder_record, notification_price_note,
+                           reminder_price, reminder_quote,
+                           require_final_for_alerts)
+from dataclasses import replace
 
 # 航班号尾码提取（name 尾部）——跨渠道合并键回退与比价头行地板档
 # 共用同一口径（code 缺失回退 name 的同款收口先例）
@@ -45,6 +49,8 @@ _cabin_cn = cabin_class
 # （report.py 比价链段），日报路径价格行无同款披露位——启用日须
 # 同轮补日报侧披露，防两口径差对日报读者不可见
 FLIGGY_TAX_PAD = 0
+_PHONE_COOLDOWN_SECONDS = 2 * 3600
+_PHONE_REPEAT_DROP = 50
 
 # 途牛价格口径标定（实测勿再疑）：同指纹同航班跨渠道配对
 # n=515——tuniu/ctrip=1.000（n=139）、tuniu/fliggy=1.000（n=101）、
@@ -64,21 +70,22 @@ def _is_calendar_row(f) -> bool:
                 or str(f.get("arrTime") or "").strip())
 
 
-def _qual_price(f) -> float:
-    """达标判定口径价 = 展示价 + 飞猪税垫；行情展示与排序仍用展示价。
-    脏价（非数字）按不达标（inf）处理——若原样穿透，`<= th` 判定处
-    会抛 TypeError 炸掉整轮推送。
-    国际行（元素 intl 键）price 已是含税总价口径（INTL_DESIGN §1.6）
-    ——免税垫，重复加税=判定虚高。"""
-    try:
-        p = float(f.get("price"))
-    except (TypeError, ValueError):
-        return float("inf")
-    if f.get("intl"):
-        return p
-    if f.get("_platform") == "fliggy":
-        return p + FLIGGY_TAX_PAD
-    return p
+def _qual_price(f, require_final=None) -> float:
+    """统一提醒判价；费用未确认只作不可判定，不输出零费用。"""
+    if require_final is None:
+        require_final = f.get("_require_final_prices", True)
+    amount = reminder_price(f, require_final)
+    return float("inf") if amount is None else amount
+
+
+def _quote_identity(f) -> str:
+    quote = reminder_quote(f)
+    identity = [quote]
+    if quote["complete"]:
+        # 已核结算证据属于具体渠道和销售政策，不能合并后借给别家。
+        identity.extend((f.get("_platform") or f.get("platform"),
+                         f.get("policyId") or f.get("policy_id")))
+    return json.dumps(identity, ensure_ascii=False, sort_keys=True)
 
 
 # 档位词面单源（收编 审校 P1-2 挂账：_legend_line/图 markdown
@@ -598,7 +605,7 @@ def _dedup_tie(rows: list) -> list:
         key = (_fk(f), f.get("depTime"),
                f.get("arrTime"), f.get("transCity", ""),
                f.get("crossDayDesc", ""), bool(f.get("stopover")),
-               f.get("price"))
+                f.get("price"), _quote_identity(f))
         if key in groups:
             g = groups[key]
             g["_tie_n"] += 1
@@ -620,6 +627,7 @@ def _dedup_tie(rows: list) -> list:
                 (f.get("_platform") or "?",
                  f.get("transferBaggage") or "",
                  f.get("layoverM")))
+            g.setdefault("_tie_records", []).append(dict(f))
         else:
             g = dict(f)
             g["_tie_n"] = 1
@@ -649,11 +657,18 @@ def _tie_any_ok(g: dict, th, route, transfer: bool) -> bool:
         ok = ok and Alerter._transfer_ok(g, route)
     if ok or not g.get("_tie_rows"):
         return ok
-    for _plat, _tbg, _lm in g["_tie_rows"]:
-        shadow = dict(g)
-        shadow["_platform"] = _plat
-        shadow["transferBaggage"] = _tbg
-        shadow["layoverM"] = _lm
+    members = g.get("_tie_records")
+    if members is None:
+        # 旧快照只保留平台和衔接字段，没有成员的结算证据。
+        members = []
+        for _plat, _tbg, _lm in g["_tie_rows"]:
+            shadow = dict(g)
+            shadow.pop("quote", None)
+            shadow["_platform"] = _plat
+            shadow["transferBaggage"] = _tbg
+            shadow["layoverM"] = _lm
+            members.append(shadow)
+    for shadow in members:
         ok2 = th > 0 and _qual_price(shadow) <= th
         if transfer:
             ok2 = ok2 and Alerter._transfer_ok(shadow, route)
@@ -673,7 +688,9 @@ def _row_is(a: dict, b: dict) -> bool:
             and a.get("depTime") == b.get("depTime")
             and a.get("arrTime") == b.get("arrTime")
             and a.get("crossDayDesc", "") == b.get("crossDayDesc", "")
-            and a.get("price") == b.get("price"))
+            and a.get("_quoted_price", a.get("price"))
+            == b.get("_quoted_price", b.get("price"))
+            and _quote_identity(a) == _quote_identity(b))
 
 
 def _row_qual(f: dict, th, route, transfer: bool) -> bool:
@@ -1124,7 +1141,8 @@ class Alerter:
                  platforms: list = None, urgent_notifier=None,
                  quiet_start: str = "", quiet_end: str = "",
                  base_url: str = "", image_host: dict = None,
-                 heartbeat_style: str = "slim"):
+                 heartbeat_style: str = "slim",
+                 require_final_prices: bool = True):
         """
         notifier: 推送器（None 表示不推送）
         storage: 用于读写 alert_state（去抖）
@@ -1142,6 +1160,8 @@ class Alerter:
                          达标主推与 ntfy 照发（出手警报不被吞）
         """
         self.logger = logger
+        self.require_final_prices = require_final_for_alerts({
+            "pricing": {"require_final_for_alerts": require_final_prices}})
         self.notifier = notifier
         self.urgent_notifier = urgent_notifier
         self.storage = storage
@@ -1169,6 +1189,48 @@ class Alerter:
         self.image_host = image_host or {}
         # 本轮走势图 URL（{(from,to,date): url}，main.job 每轮填充，推送时附带）
         self.round_charts = {}
+
+    def _alert_row(self, row):
+        amount = reminder_price(row, self.require_final_prices)
+        if amount is None:
+            return None
+        return {**row, "_quoted_price": row.get("_quoted_price", row["price"]),
+                "price": amount, "quote": reminder_quote(row),
+                "_require_final_prices": self.require_final_prices,
+                "_reminder_view": True}
+
+    def _reminder_candidates(self, rows, route):
+        """提醒预算采用当前价格口径，完整优惠后的零元金额同样可判价。"""
+        price_max = getattr(route, "price_max", 0) or 0
+        candidates = []
+        for row in rows:
+            amount = reminder_price(row, self.require_final_prices)
+            if amount is None or (price_max and amount > price_max):
+                continue
+            candidates.append(row)
+        return candidates
+
+    def _notification_text(self, desp, records=()):
+        marker = "> 价格口径："
+        if records:
+            notes = list(dict.fromkeys(
+                notification_price_note(record, self.require_final_prices)
+                for record in records))
+            return _append_before_at(desp, "\n\n".join(
+                marker + note for note in notes))
+        if not self.require_final_prices:
+            return _append_before_at(desp, marker + (
+                "来源报价；税费、当前绑定费用和本单优惠需另行核对。"))
+        return desp
+
+    def _has_final_candidates(self, routes_sections):
+        return any(
+            reminder_price(row) is not None
+            for _route, sections in routes_sections
+            for section in sections
+            for row in (section.get("all_flights") or
+                        [section.get("best_direct"), section.get("best_transfer")])
+            if row is not None)
 
     def _in_quiet(self, now=None) -> bool:
         """免打扰窗口判定（支持跨零点；未配置/解析失败一律 False）。
@@ -1274,64 +1336,53 @@ class Alerter:
 
     # ---------- 阈值提醒 + 推送 ----------
     def _handle_threshold(self, route: Route, prices: List[FlightPrice]):
-        # 按日期取最低
-        best_by_date = {}
         by_date = {}
-        for p in prices:
-            # 裸价行（渠道半截响应：有价无明细）不参与阈值判定——qunar
-            # 已「无明细拒落价」，这里再挡一层：「没抓到」与「没票」
-            # 必须区分，残值价曾触发推送并污染去抖基准
-            if not p.extra:
+        for price in prices:
+            if not price.extra:
                 continue
-            by_date.setdefault(p.depart_date, []).append(p)
-        for date, cand in by_date.items():
-            # 跨渠道孤低价守卫：与 digest 路径同防线，legacy
-            # 阈值路径不豁免（幻影渠道最低直通电话告警的最后一道门）
-            entries = [(p.price + (FLIGGY_TAX_PAD if p.platform == "fliggy"
-                                   else 0), p.platform) for p in cand]
-            ph = xchan_phantom_idx(entries)
-            for i in ph:
-                self.logger.warning(
-                    "[孤低价守卫] %s→%s %s %s ￥%.0f 拦截（阈值路径）",
-                    route.from_code, route.to_code, date,
-                    cand[i].platform, cand[i].price)
-            for i, p in enumerate(cand):
-                if i in ph:
-                    continue
-                cur = best_by_date.get(date)
-                if cur is None or p.price < cur.price:
-                    best_by_date[date] = p
+            record = flight_reminder_record(price, self.require_final_prices)
+            if record is None or _is_calendar_row(record):
+                continue
+            if not self._reminder_candidates([record], route):
+                continue
+            amount = reminder_price(record, self.require_final_prices)
+            by_date.setdefault(price.depart_date, []).append((price, record, amount))
 
-        for date, bp in sorted(best_by_date.items()):
-            route_key = f"{self.user}|{route.from_code}-{route.to_code}-{date}"
-
-            # 阈值判定用达标口径价（飞猪税前展示价加税垫）；日志/推送仍报
-            # 页面价——用户打开页面看到多少就是多少
-            eff = bp.price + (FLIGGY_TAX_PAD if bp.platform == "fliggy" else 0)
-            if eff > route.alert_threshold:
-                # 涨出阈值：清除去抖状态，下次跌破按"首次"重新推
+        for date, candidates in sorted(by_date.items()):
+            dropped = xchan_phantom_idx([
+                (reminder_quote(record)["quoted_amount"], price.platform)
+                for price, record, _amount in candidates])
+            eligible = [item for index, item in enumerate(candidates)
+                        if index not in dropped]
+            if not eligible:
+                continue
+            price, record, amount = min(eligible, key=lambda item: item[2])
+            route_key = alert_state_key(
+                f"{self.user}|{route.from_code}-{route.to_code}-{date}",
+                self.require_final_prices)
+            if amount > route.alert_threshold:
                 if self.storage:
                     self.storage.clear_alert_state(route_key)
                 continue
-
             last = self.storage.get_alert_state(route_key) if self.storage else None
-            should_push, reason = self._should_push(bp.price, last)
-
-            # 控制台始终打印当前命中低价的状态；notifier 未启用时
-            # 如实打「跳过」——词面「推送」实际静默=排查误导
+            should_push, reason = self._should_push(amount, last)
             self.logger.warning(
-                "[低价] %s->%s %s ￥%.0f (阈值￥%.0f, 上次推送￥%s) -> %s",
-                route.from_name, route.to_name, date,
-                bp.price, route.alert_threshold,
-                f"{last:.0f}" if last else "-",
+                "[低价] %s->%s %s ￥%.2f (阈值￥%.2f) -> %s",
+                route.from_name, route.to_name, date, amount,
+                route.alert_threshold,
                 ("推送" if self.notifier else "跳过(未启用推送)")
-                if should_push else f"跳过({reason})",
-            )
-
-            if should_push and self.notifier:
-                ok = self._push(route, date, bp, last)
-                if ok and self.storage:
-                    self.storage.set_alert_state(route_key, bp.price)
+                if should_push else f"跳过({reason})")
+            if not should_push or not self.notifier:
+                continue
+            selected = replace(
+                price, price=amount,
+                airline=record.get("name") or price.airline,
+                flight_no=record.get("code") or price.flight_no,
+                depart_time=record.get("depTime") or price.depart_time,
+                arrive_time=record.get("arrTime") or price.arrive_time,
+                extra=json.dumps([record], ensure_ascii=False))
+            if self._push(route, date, selected, last) and self.storage:
+                self.storage.set_alert_state(route_key, amount)
 
     def _should_push(self, cur: float, last: Optional[float]):
         if last is None:
@@ -1345,7 +1396,7 @@ class Alerter:
 
     # ---------- 直飞/中转分类提醒 ----------
     @staticmethod
-    def _route_filters(flights, route):
+    def _route_filters(flights, route, *, apply_price_max=True):
         """航线级筛选约束（r339 明细已解析字段升格为监控筛选，对齐
         OTA 高频筛选面）。四门失败语义逐条定界：
         ① airlines 白名单——码/全称/简称（别称归一到码，
@@ -1421,7 +1472,7 @@ class Alerter:
                 ps2 = str(f.get("planeSize2") or "")
                 if ps2 and "大型机" not in ps2:
                     continue
-            if pmax:
+            if pmax and apply_price_max:
                 # 价格上限（r341）：只盯 ≤ 上限的班次；票价不可解析
                 # 的行保留（fail-open——票价是行主体，缺席剔除会整
                 # 渠道误杀，与 min_baggage fail-close 异律已注明）
@@ -1627,12 +1678,10 @@ class Alerter:
                         from core.flightnorm import normalize as _rf
                         _rf(f, date)
 
-            # 价格统一取整（各渠道 float 携带 .0 尾巴，污染所有显示位）
+            # 保留分精度及原始来源价，费用契约用于独立的提醒候选池。
             for f in flights:
-                try:
-                    f["price"] = round(float(f["price"]))
-                except (TypeError, ValueError):
-                    pass
+                f["quote"] = reminder_quote(f)
+                f["_require_final_prices"] = self.require_final_prices
 
             # 同指纹衔接补全：qunar 列表页不渲染停留时长且响应混淆体
             # 实测不可挖（0/24 锚定命中）——同班次在携程测得的真实停留
@@ -1651,7 +1700,8 @@ class Alerter:
                     f.get("depTime", ""), dmin, dmax)]
             # 航线级筛选约束（航司白名单/排除廉航/托运下限/大机型）：
             # 同插桩层——分类前整表剔除，明细/达标/速览/比价全链路一致
-            flights = self._route_filters(flights, route)
+            # 来源行情保留原额；提醒候选随后按费用与优惠核对后的金额执行预算。
+            flights = self._route_filters(flights, route, apply_price_max=False)
 
             directs = [f for f in flights if not f.get("transCity")]
             transfers = [f for f in flights if f.get("transCity")]
@@ -1709,14 +1759,14 @@ class Alerter:
                      or (isinstance(f.get("layoverM"), int)
                          and f["layoverM"] >= route.transfer_layover_min))]
             # 达标判定只认当轮实时数据（_stale_h 为近期补位，仅作展示）
-            fresh_d = [f for f in directs if not f.get("_stale_h")]
-            fresh_t = [f for f in ok_transfers if not f.get("_stale_h")]
-            # 达标口径最优：按 _qual_price 取最小——按页面价取最低曾让
-            # 高页面价但达标口径更优的行被遮蔽（页面最低行税垫/口径修正
-            # 后超线，次低行真达标却永不参判，达标漏报）
-            best_direct = (min(fresh_d, key=_qual_price)
+            fresh_d = self._reminder_candidates(
+                [f for f in directs if not f.get("_stale_h")], route)
+            fresh_t = self._reminder_candidates(
+                [f for f in ok_transfers if not f.get("_stale_h")], route)
+            # 税费和绑定费用可能改变报价顺序，按可判定的应付价选最低。
+            best_direct = (self._alert_row(min(fresh_d, key=_qual_price))
                            if fresh_d else None)
-            best_transfer = (min(fresh_t, key=_qual_price)
+            best_transfer = (self._alert_row(min(fresh_t, key=_qual_price))
                              if fresh_t else None)
             # 行情口径最优（不限直挂）：KPI 展示/建议行差值基——与达标链
             # 同治先认当轮：6h 补位旧价曾无标注进 KPI 差值，
@@ -1773,8 +1823,7 @@ class Alerter:
             # 仍有可信行情，不整渠道从行情面消失
             _dprices = [p for p in prices if p.depart_date == date]
             _pdrop = xchan_phantom_idx(
-                [(p.price + (FLIGGY_TAX_PAD if p.platform == "fliggy"
-                             else 0), p.platform) for p in _dprices])
+                [(p.price, p.platform) for p in _dprices])
             platform_mins = {}
             for _i, p in enumerate(_dprices):
                 if _i in _pdrop:
@@ -1835,12 +1884,9 @@ class Alerter:
     def _mark_xchan(rows):
         """行级打 _xphan 标（跨渠道孤低价，xchan_phantom_idx 纯函数判定；
         脏价按 inf 参锚=永不判孤、但也拖不低本渠道锚之外任何锚）。"""
-        entries = []
-        for f in rows:
-            try:
-                entries.append((_qual_price(f), f.get("_platform") or ""))
-            except Exception:
-                entries.append((float("inf"), f.get("_platform") or ""))
+        # 孤低价检测针对来源报价；未知结算费不能成为inf统计锚。
+        entries = [(reminder_quote(f)["quoted_amount"],
+                    f.get("_platform") or "") for f in rows]
         for i in xchan_phantom_idx(entries):
             rows[i]["_xphan"] = True
 
@@ -1852,6 +1898,8 @@ class Alerter:
         指纹用 arrDate 不用 crossDayDesc：跨天写法渠道不一致（实锤
         qunar「+1天」vs ctrip 空）曾令跨天班（中转常态）同价优选恒失效。"""
         plat = f.get("_platform") or "qunar"
+        if reminder_quote(f)["complete"]:
+            return plat
         try:
             key = (f.get("depTime"), f.get("arrTime"),
                    f.get("transCity") or "", f.get("arrDate") or "",
@@ -2023,33 +2071,40 @@ class Alerter:
         return min(ratios) if ratios else None
 
     def _phone_should_ring(self, hit) -> bool:
-        """电话去抖：首拨必响；同键 2 小时内不重拨，除非再降 ≥￥50。"""
-        route, s, kind, f, _th = hit
-        key = (f"{self.user}|phone|{route.from_code}-{route.to_code}-"
-               f"{s['date']}-{kind}")
+        """电话去抖：首拨必响；同口径两小时内仅再次降价50元才重拨。"""
+        route, section, kind, record, _threshold = hit
+        amount = reminder_price(record, self.require_final_prices)
+        if amount is None:
+            return False
+        key = alert_state_key(
+            f"{self.user}|phone|{route.from_code}-{route.to_code}-"
+            f"{section['date']}-{kind}", self.require_final_prices)
+        if not self.storage:
+            return True
+        from contextlib import closing
+        import sqlite3
+
         now = datetime.now()
-        if self.storage:
-            try:
-                import sqlite3
-                conn = sqlite3.connect(self.storage.db_path)
-                row = conn.execute(
-                    "SELECT last_price, last_sent_at FROM alert_state "
-                    "WHERE route_key=?", (key,)).fetchone()
+        try:
+            with closing(sqlite3.connect(self.storage.db_path)) as connection:
+                row = connection.execute(
+                    "SELECT last_price, last_sent_at FROM alert_state WHERE route_key=?",
+                    (key,)).fetchone()
                 if row:
-                    prev_price, last_at = float(row[0] or 0), row[1]
-                    t = datetime.strptime(last_at[:19], "%Y-%m-%d %H:%M:%S")
-                    if (now - t).total_seconds() < 2 * 3600 \
-                            and (prev_price - f["price"]) < 50:
+                    previous_amount, last_at = float(row[0]), row[1]
+                    last_time = datetime.strptime(last_at[:19], "%Y-%m-%d %H:%M:%S")
+                    if ((now - last_time).total_seconds() < _PHONE_COOLDOWN_SECONDS
+                            and previous_amount - amount < _PHONE_REPEAT_DROP):
                         return False
-                conn.execute(
+                connection.execute(
                     "INSERT INTO alert_state (route_key, last_price, last_sent_at) "
                     "VALUES (?,?,?) ON CONFLICT(route_key) DO UPDATE SET "
                     "last_price=excluded.last_price, last_sent_at=excluded.last_sent_at",
-                    (key, float(f["price"]), now.strftime("%Y-%m-%d %H:%M:%S")))
-                conn.commit()
-                conn.close()
-            except Exception:
-                pass
+                    (key, amount, now.strftime("%Y-%m-%d %H:%M:%S")))
+                connection.commit()
+        except sqlite3.Error:
+            self.logger.exception("电话提醒去抖记录失败")
+            raise
         return True
 
     def _launch_public(self) -> bool:
@@ -2197,12 +2252,16 @@ class Alerter:
                 bd, bt = s["best_direct"], s["best_transfer"]
                 if (route.alert_direct > 0 and bd is not None
                         and not _is_calendar_row(bd)
-                        and _qual_price(bd) <= route.alert_direct):
-                    hits.append((route, s, "直飞", bd, route.alert_direct))
+                        and _qual_price(bd, self.require_final_prices)
+                        <= route.alert_direct):
+                    hits.append((route, s, "直飞", self._alert_row(bd),
+                                 route.alert_direct))
                 if (route.alert_transfer > 0 and bt is not None
                         and not _is_calendar_row(bt)
-                        and _qual_price(bt) <= route.alert_transfer):
-                    hits.append((route, s, "中转", bt, route.alert_transfer))
+                        and _qual_price(bt, self.require_final_prices)
+                        <= route.alert_transfer):
+                    hits.append((route, s, "中转", self._alert_row(bt),
+                                 route.alert_transfer))
         return hits
 
     def _ops_notes(self, rs_list: list, no_data: list = None) -> list:
@@ -3230,6 +3289,7 @@ class Alerter:
             # 大空白）、裸拼单 \n 又让 PC 端 @ 段与上一行粘连——rstrip
             # 后补段落级分隔，恒恰一个空段
             desp = desp.rstrip("\n") + f"\n\n@{self.at_mobile} "
+        desp = self._notification_text(desp, [hit[3] for hit in hits])
         return {"title": sanitize_desp(title), "desp": sanitize_desp(desp),
                 "hits": hits, "at_mobiles": at_mobiles}
 
@@ -3243,6 +3303,9 @@ class Alerter:
         """一轮一消息：每航线一个小节（方向+日期标题，一眼可辨），
         明细合并一张总表；任一航线达标则整条消息变警报。
         no_data：配置了但本轮全渠道零条的航线（desp 补对账行）。"""
+        if self.require_final_prices and not self._has_final_candidates(rs_list):
+            self.logger.info("[费用] 最终费用未核对，本轮价格提醒省略；来源报价保留")
+            return False
         hits = self._collect_hits(rs_list)
         # 免打扰时段：行情心跳整轮省略（达标警报链路不受限）
         if not hits and self._in_quiet():
@@ -3607,6 +3670,11 @@ class Alerter:
                                           bare])
 
     def _push_digest(self, route: Route, sections: list):
+        if not sections:
+            return False
+        if self.require_final_prices and not self._has_final_candidates([(route, sections)]):
+            self.logger.info("[费用] 最终费用未核对，本轮价格提醒省略；来源报价保留")
+            return False
         # 生产不可达路径备案：调度唯一入口是 _push_digest_multi
         # （main.check_multi）——本单航线版运维对账行只有两族
         # （_channel_ops_lines），缺主路径 _ops_notes 的直挂标注缺失/
@@ -3741,6 +3809,10 @@ class Alerter:
             # 未达标心跳退避（与 multi 主路径同闸同语义）
             if not self._prev_hit and not self._heartbeat_gate():
                 return
+            records = [row for section in sections
+                       for row in (section.get("best_direct"), section.get("best_transfer"))
+                       if row is not None]
+            desp = self._notification_text(desp, records)
             if self.notifier.send(sanitize_desp(title), sanitize_desp(desp)):
                 self.logger.info("[心跳] 已推送运行状态: %s", title)
             return
@@ -3843,7 +3915,7 @@ class Alerter:
         # （r242 审校 Minor-3：r236 只收了 desp——title 载体=route
         # 配置自由文本，存档页标题/主推/urgent 全链随本点收口）
         title = sanitize_desp(title)
-        desp = sanitize_desp(desp)
+        desp = sanitize_desp(self._notification_text(desp, [hit[1] for hit in hits]))
         # 详情页存档先行：Windows 弹窗 launch 直达（与 multi 主路径同闭环，
         # 此路径弹窗点击曾无任何反应）
         launch = self._archive_notify(title, desp)
@@ -4787,11 +4859,16 @@ class Alerter:
     def _category_alert(self, route: Route, date: str, f: dict, category: str,
                         threshold: float, pool_size: int, src_platform: str,
                         pool: Optional[list] = None):
+        f = self._alert_row(f)
+        if f is None:
+            return
         price = float(f["price"])
-        # 阈值判定用达标口径价（飞猪税垫）；展示/去抖仍记录页面价
+        # 提醒、展示和去抖使用同一个已确认金额。
         eff = _qual_price(f)
         label = "直飞" if category == "direct" else "中转"
-        route_key = f"{self.user}|{route.from_code}-{route.to_code}-{date}-{category}"
+        route_key = alert_state_key(
+            f"{self.user}|{route.from_code}-{route.to_code}-{date}-{category}",
+            self.require_final_prices)
         if not isinstance(eff, (int, float)) or eff > threshold:
             if self.storage:
                 self.storage.clear_alert_state(route_key)
@@ -4809,10 +4886,7 @@ class Alerter:
             ok = self._push_flight(route, date, f, category, threshold,
                                    last, pool_size, src_platform, pool=pool)
             if ok and self.storage:
-                # 去抖基准与判定同口径存 eff：曾存页面价，飞猪税垫差
-                # 恒被 `_should_push` 视作「涨 ￥100」幻影重推
-                # （push_rise_min=50 必触发）；pad 常量时 eff 差=页面价差，
-                # _push_flight 涨跌文案不失真
+                # 状态键按价格口径隔离，保存本次通知实际使用的金额。
                 self.storage.set_alert_state(route_key, eff)
 
     def _push_flight(self, route: Route, date: str, f: dict, category: str,
@@ -4884,6 +4958,7 @@ class Alerter:
         if view_url:
             desp += (f"[👉 在{self.plat_cn(plat)}"
                      f"查看详情]({view_url})\n\n")
+        desp = self._notification_text(desp, [f])
         return self.notifier.send(sanitize_desp(title), sanitize_desp(desp))
 
     def _push(self, route: Route, date: str, p: FlightPrice,
@@ -4920,6 +4995,8 @@ class Alerter:
         if view_url:
             desp += (f"[👉 在{self.plat_cn(p.platform)}"
                      f"查看详情]({view_url})\n\n")
+        record = flight_reminder_record(p, self.require_final_prices)
+        desp = self._notification_text(desp, [record] if record is not None else [])
         return self.notifier.send(sanitize_desp(title), sanitize_desp(desp))
 
     def _build_view_url(self, route: Route, date: str, platform: str) -> str:

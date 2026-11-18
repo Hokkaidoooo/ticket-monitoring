@@ -1,0 +1,2237 @@
+{
+  "source": "OurAirports via datasets/airport-codes",
+  "source_url": "https://raw.githubusercontent.com/datasets/airport-codes/master/data/airport-codes.csv",
+  "license": "ODC-PDDL-1.0 / Public Domain",
+  "license_url": "https://opendatacommons.org/licenses/pddl/1.0/",
+  "attribution": "OurAirports; datasets/airport-codes",
+  "retrieved_at": "2026-11-18T08:14:37.187141+00:00",
+  "scope": "China mainland IATA airports; aviation civil time Asia/Shanghai",
+  "airports": {
+    "AAT": {
+      "name": "Altay Xuedu Airport",
+      "latitude": 47.749886,
+      "longitude": 88.085808,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWAT"
+    },
+    "ACF": {
+      "name": "Aral Tarim Airport",
+      "latitude": 40.434748,
+      "longitude": 81.26206,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWAL"
+    },
+    "ACX": {
+      "name": "Xingyi Wanfenglin Airport",
+      "latitude": 25.083423,
+      "longitude": 104.960804,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUYI"
+    },
+    "AEB": {
+      "name": "Baise (Bose) Bama Airport",
+      "latitude": 23.7206,
+      "longitude": 106.959999,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGBS"
+    },
+    "AEQ": {
+      "name": "Ar Horqin Airport",
+      "latitude": 43.908407,
+      "longitude": 120.15099,
+      "time_zone": "Asia/Shanghai",
+      "icao": "AEQ"
+    },
+    "AHJ": {
+      "name": "Hongyuan Airport",
+      "latitude": 32.53154,
+      "longitude": 102.35224,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUHY"
+    },
+    "AKA": {
+      "name": "Ankang Fuqiang Airport",
+      "latitude": 32.75696,
+      "longitude": 108.87338,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLAK"
+    },
+    "AKU": {
+      "name": "Aksu Hongqipo Airport",
+      "latitude": 41.262501,
+      "longitude": 80.291702,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWAK"
+    },
+    "AOG": {
+      "name": "Anshan Teng'ao Airport / Anshan Air Base",
+      "latitude": 41.105301,
+      "longitude": 122.853996,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYAS"
+    },
+    "APJ": {
+      "name": "Ali Pulan Airport",
+      "latitude": 30.397898,
+      "longitude": 81.13317,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0354"
+    },
+    "AQG": {
+      "name": "Anqing Tianzhushan Airport / Anqing North Air Base",
+      "latitude": 30.582199,
+      "longitude": 117.050003,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSAQ"
+    },
+    "AVA": {
+      "name": "Anshun Huangguoshu Airport",
+      "latitude": 26.260556,
+      "longitude": 105.873333,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUAS"
+    },
+    "AXF": {
+      "name": "Alxa Left Banner Bayanhot Airport",
+      "latitude": 38.748317,
+      "longitude": 105.58416,
+      "time_zone": "Asia/Shanghai",
+      "icao": "AXF"
+    },
+    "AYN": {
+      "name": "Anyang Yindu Airport",
+      "latitude": 36.1339,
+      "longitude": 114.344002,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZHAY"
+    },
+    "AZJ": {
+      "name": "Zhenjiang Dalu Airport",
+      "latitude": 32.23649,
+      "longitude": 119.718683,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSDL"
+    },
+    "BAR": {
+      "name": "Qionghai Bo'ao Airport",
+      "latitude": 19.140951,
+      "longitude": 110.452766,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZJQH"
+    },
+    "BAV": {
+      "name": "Baotou Donghe International Airport",
+      "latitude": 40.560001,
+      "longitude": 109.997002,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBOW"
+    },
+    "BCJ": {
+      "name": "Beichuan Yongchang Airport",
+      "latitude": 31.581474,
+      "longitude": 104.459701,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUBC"
+    },
+    "BFJ": {
+      "name": "Bijie Feixiong Airport",
+      "latitude": 27.267066,
+      "longitude": 105.472097,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUBJ"
+    },
+    "BFU": {
+      "name": "Bengbu Renheji Airport",
+      "latitude": 32.847733,
+      "longitude": 117.320244,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSBB"
+    },
+    "BFY": {
+      "name": "Bengbu Tenghu Airport",
+      "latitude": 33.166292,
+      "longitude": 117.058344,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0476"
+    },
+    "BHY": {
+      "name": "Beihai Fucheng Airport",
+      "latitude": 21.538659,
+      "longitude": 109.293683,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGBH"
+    },
+    "BKV": {
+      "name": "Bailing Airport",
+      "latitude": 41.656944,
+      "longitude": 110.3125,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0414"
+    },
+    "BPE": {
+      "name": "Qinhuangdao Beidaihe Airport",
+      "latitude": 39.666384,
+      "longitude": 119.061384,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBDH"
+    },
+    "BPL": {
+      "name": "Bole Alashankou Airport",
+      "latitude": 44.895461,
+      "longitude": 82.30007,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWBL"
+    },
+    "BPX": {
+      "name": "Qamdo Bangda Airport",
+      "latitude": 30.553600311279297,
+      "longitude": 97.1082992553711,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUBD"
+    },
+    "BSD": {
+      "name": "Baoshan Yunrui Airport",
+      "latitude": 25.053301,
+      "longitude": 99.168297,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZPBS"
+    },
+    "BZJ": {
+      "name": "Bozhou Airport (under construction)",
+      "latitude": 33.560777,
+      "longitude": 115.911859,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0413"
+    },
+    "BZX": {
+      "name": "Bazhong Enyang Airport",
+      "latitude": 31.73842,
+      "longitude": 106.644872,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0062"
+    },
+    "CAN": {
+      "name": "Guangzhou Baiyun International Airport",
+      "latitude": 23.392401,
+      "longitude": 113.299004,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGGG"
+    },
+    "CBZ": {
+      "name": "Binzhou Dagao General Aviation Airport",
+      "latitude": 37.61055,
+      "longitude": 117.885699,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0218"
+    },
+    "CDE": {
+      "name": "Chengde Puning Airport",
+      "latitude": 41.1225,
+      "longitude": 118.073889,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBCD"
+    },
+    "CGD": {
+      "name": "Changde Taohuayuan Airport",
+      "latitude": 28.9189,
+      "longitude": 111.639999,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGCD"
+    },
+    "CGO": {
+      "name": "Zhengzhou Xinzheng International Airport",
+      "latitude": 34.526497,
+      "longitude": 113.849165,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZHCC"
+    },
+    "CGQ": {
+      "name": "Changchun Longjia International Airport",
+      "latitude": 43.996201,
+      "longitude": 125.684998,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYCC"
+    },
+    "CHG": {
+      "name": "Chaoyang Airport",
+      "latitude": 41.538101,
+      "longitude": 120.434998,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYCY"
+    },
+    "CIF": {
+      "name": "Chifeng Yulong Airport",
+      "latitude": 42.159723,
+      "longitude": 118.840971,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBCF"
+    },
+    "CIH": {
+      "name": "Changzhi Wangcun Airport",
+      "latitude": 36.247501,
+      "longitude": 113.125999,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBCZ"
+    },
+    "CKG": {
+      "name": "Chongqing Jiangbei International Airport",
+      "latitude": 29.712254,
+      "longitude": 106.651895,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUCK"
+    },
+    "CNI": {
+      "name": "Changhai Dachangshandao Airport",
+      "latitude": 39.266441,
+      "longitude": 122.66696,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYCH"
+    },
+    "CQW": {
+      "name": "Chongqing Xiannüshan Airport",
+      "latitude": 29.465658,
+      "longitude": 107.693664,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUWL"
+    },
+    "CSX": {
+      "name": "Changsha Huanghua International Airport",
+      "latitude": 28.189199,
+      "longitude": 113.220001,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGHA"
+    },
+    "CTU": {
+      "name": "Chengdu Shuangliu International Airport",
+      "latitude": 30.558257,
+      "longitude": 103.945966,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUUU"
+    },
+    "CWJ": {
+      "name": "Cangyuan Washan Airport",
+      "latitude": 23.276331,
+      "longitude": 99.373169,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZPCW"
+    },
+    "CZX": {
+      "name": "Changzhou Benniu International Airport",
+      "latitude": 31.920485,
+      "longitude": 119.77546,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSCG"
+    },
+    "DAT": {
+      "name": "Datong Yungang International Airport",
+      "latitude": 40.06139,
+      "longitude": 113.480509,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBDT"
+    },
+    "DAX": {
+      "name": "Dachuan Airport",
+      "latitude": 31.1302,
+      "longitude": 107.4295,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUDX"
+    },
+    "DBC": {
+      "name": "Baicheng Chang'an Airport",
+      "latitude": 45.505278,
+      "longitude": 123.019722,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYBA"
+    },
+    "DCY": {
+      "name": "Daocheng Yading Airport",
+      "latitude": 29.31632,
+      "longitude": 100.060317,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUDC"
+    },
+    "DDG": {
+      "name": "Dandong Langtou International Airport",
+      "latitude": 40.025453,
+      "longitude": 124.28669,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYDD"
+    },
+    "DDR": {
+      "name": "Shigatse Tingri Airport",
+      "latitude": 28.604567,
+      "longitude": 86.798,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0236"
+    },
+    "DEJ": {
+      "name": "Tongren Dejiang Airport (Under Construction)",
+      "latitude": 28.121,
+      "longitude": 108.1631,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUDJ"
+    },
+    "DEQ": {
+      "name": "Deqing Moganshan Airport",
+      "latitude": 30.504264,
+      "longitude": 120.107388,
+      "time_zone": "Asia/Shanghai",
+      "icao": "DEQ"
+    },
+    "DFA": {
+      "name": "Shangluo Airport",
+      "latitude": 33.708533,
+      "longitude": 110.249284,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0073"
+    },
+    "DHH": {
+      "name": "Barkol Dahe Airport",
+      "latitude": 43.756544,
+      "longitude": 93.137164,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWLK"
+    },
+    "DIG": {
+      "name": "Diqing Shangri-La Airport",
+      "latitude": 27.7936,
+      "longitude": 99.6772,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZPDQ"
+    },
+    "DLC": {
+      "name": "Dalian Zhoushuizi International Airport",
+      "latitude": 38.965719,
+      "longitude": 121.538477,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYTL"
+    },
+    "DLU": {
+      "name": "Dali Fengyi Airport",
+      "latitude": 25.649401,
+      "longitude": 100.319,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZPDL"
+    },
+    "DNH": {
+      "name": "Dunhuang Mogao International Airport",
+      "latitude": 40.161953,
+      "longitude": 94.812827,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLDH"
+    },
+    "DOY": {
+      "name": "Dongying Shengli Airport",
+      "latitude": 37.50137,
+      "longitude": 118.789863,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSDY"
+    },
+    "DQA": {
+      "name": "Daqing Sartu Airport",
+      "latitude": 46.750883,
+      "longitude": 125.138642,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYDQ"
+    },
+    "DSN": {
+      "name": "Ordos Ejin Horo International Airport",
+      "latitude": 39.493514,
+      "longitude": 109.8599,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBDS"
+    },
+    "DTU": {
+      "name": "Wudalianchi Dedu Airport",
+      "latitude": 48.441037,
+      "longitude": 126.128374,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYDU"
+    },
+    "DWS": {
+      "name": "Morin Dawa Banner Airport",
+      "latitude": 48.38745,
+      "longitude": 124.43127,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0157"
+    },
+    "DXJ": {
+      "name": "Xiangxi Biancheng Airport",
+      "latitude": 28.4972,
+      "longitude": 109.5218,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGXX"
+    },
+    "DYG": {
+      "name": "Zhangjiajie Hehua International Airport",
+      "latitude": 29.104749,
+      "longitude": 110.442786,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGDY"
+    },
+    "DZH": {
+      "name": "Dazhou Jinya Airport",
+      "latitude": 31.048815,
+      "longitude": 107.435646,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUDA"
+    },
+    "DZU": {
+      "name": "Dazu Air Base",
+      "latitude": 29.636227,
+      "longitude": 105.773621,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUDZ"
+    },
+    "EHU": {
+      "name": "Ezhou Huahu International Airport",
+      "latitude": 30.341178,
+      "longitude": 115.03926,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZHEC"
+    },
+    "EJN": {
+      "name": "Ejin Banner Taolai Airport",
+      "latitude": 42.0155,
+      "longitude": 101.0005,
+      "time_zone": "Asia/Shanghai",
+      "icao": "EJN"
+    },
+    "ENH": {
+      "name": "Enshi Xujiaping Airport",
+      "latitude": 30.320299,
+      "longitude": 109.485001,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZHES"
+    },
+    "ENY": {
+      "name": "Yan'an Nanniwan Airport",
+      "latitude": 36.479413,
+      "longitude": 109.464083,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLYA"
+    },
+    "ERL": {
+      "name": "Erenhot Saiwusu International Airport",
+      "latitude": 43.424079,
+      "longitude": 112.091081,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBER"
+    },
+    "FOC": {
+      "name": "Fuzhou Changle International Airport",
+      "latitude": 25.929254,
+      "longitude": 119.672524,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSFZ"
+    },
+    "FUG": {
+      "name": "Fuyang Xiguan Airport",
+      "latitude": 32.882157,
+      "longitude": 115.734364,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSFY"
+    },
+    "FUO": {
+      "name": "Foshan Shadi Airport",
+      "latitude": 23.0825,
+      "longitude": 113.070833,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGFS"
+    },
+    "FYJ": {
+      "name": "Fuyuan Dongji Airport",
+      "latitude": 48.197219,
+      "longitude": 134.36298,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYFY"
+    },
+    "FYN": {
+      "name": "Fuyun Koktokay Airport",
+      "latitude": 46.804169,
+      "longitude": 89.512006,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWFY"
+    },
+    "GHN": {
+      "name": "Guanghan Airport",
+      "latitude": 30.9485,
+      "longitude": 104.3296,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUGH"
+    },
+    "GMQ": {
+      "name": "Golog Maqên Airport",
+      "latitude": 34.418066,
+      "longitude": 100.301144,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLGL"
+    },
+    "GOQ": {
+      "name": "Golmud Airport",
+      "latitude": 36.4006,
+      "longitude": 94.786102,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLGM"
+    },
+    "GXH": {
+      "name": "Gannan Xiahe Airport",
+      "latitude": 34.819014,
+      "longitude": 102.622261,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLXH"
+    },
+    "GYS": {
+      "name": "Guangyuan Panlong Airport",
+      "latitude": 32.390254,
+      "longitude": 105.694571,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUGU"
+    },
+    "GYU": {
+      "name": "Guyuan Liupanshan Airport",
+      "latitude": 36.078889,
+      "longitude": 106.216944,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLGY"
+    },
+    "GZG": {
+      "name": "Garze Gesar Airport",
+      "latitude": 31.7575,
+      "longitude": 99.554167,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUGZ"
+    },
+    "HAK": {
+      "name": "Haikou Meilan International Airport",
+      "latitude": 19.9349,
+      "longitude": 110.459,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZJHK"
+    },
+    "HBQ": {
+      "name": "Haibei Qilian Airport",
+      "latitude": 38.008068,
+      "longitude": 100.645065,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLHB"
+    },
+    "HCJ": {
+      "name": "Hechi Jinchengjiang Airport",
+      "latitude": 24.804344,
+      "longitude": 107.710819,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGHC"
+    },
+    "HCZ": {
+      "name": "Chenzhou Beihu Airport",
+      "latitude": 25.753419,
+      "longitude": 112.845404,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGCZ"
+    },
+    "HDG": {
+      "name": "Handan Airport",
+      "latitude": 36.524824,
+      "longitude": 114.424126,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBHD"
+    },
+    "HEK": {
+      "name": "Heihe Aihui Airport",
+      "latitude": 50.171621,
+      "longitude": 127.308884,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYHE"
+    },
+    "HET": {
+      "name": "Hohhot Baita International Airport",
+      "latitude": 40.849658,
+      "longitude": 111.824598,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBHH"
+    },
+    "HEW": {
+      "name": "Dongyang Hengdian General Airport",
+      "latitude": 29.122619,
+      "longitude": 120.24289,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0238"
+    },
+    "HFE": {
+      "name": "Hefei Xinqiao International Airport",
+      "latitude": 31.98779,
+      "longitude": 116.9769,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSOF"
+    },
+    "HGH": {
+      "name": "Hangzhou Xiaoshan International Airport",
+      "latitude": 30.23609,
+      "longitude": 120.428865,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSHC"
+    },
+    "HIA": {
+      "name": "Huai'an Lianshui Airport",
+      "latitude": 33.792712,
+      "longitude": 119.126657,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSSH"
+    },
+    "HJB": {
+      "name": "Hejing Bayinbuluke Airport",
+      "latitude": 42.976395,
+      "longitude": 83.995543,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0415"
+    },
+    "HJJ": {
+      "name": "Huaihua Zhijiang Airport",
+      "latitude": 27.443087,
+      "longitude": 109.704666,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGCJ"
+    },
+    "HLD": {
+      "name": "Hulunbuir Hailar Airport",
+      "latitude": 49.208616,
+      "longitude": 119.822301,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBLA"
+    },
+    "HLH": {
+      "name": "Ulanhot Yilelite Airport",
+      "latitude": 46.195333,
+      "longitude": 122.008333,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBUL"
+    },
+    "HLJ": {
+      "name": "Zhaodong Beidahuang General Airport",
+      "latitude": 46.12779,
+      "longitude": 125.77354,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0268"
+    },
+    "HMI": {
+      "name": "Hami Airport",
+      "latitude": 42.8414,
+      "longitude": 93.669197,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWHM"
+    },
+    "HNG": {
+      "name": "Hainanzhou Gonghe Airport",
+      "latitude": 36.3367,
+      "longitude": 100.480003,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0117"
+    },
+    "HNY": {
+      "name": "Hengyang Nanyue Airport",
+      "latitude": 26.72208,
+      "longitude": 112.617958,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGHY"
+    },
+    "HPG": {
+      "name": "Shennongjia Hongping Airport",
+      "latitude": 31.626,
+      "longitude": 110.34,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZHSN"
+    },
+    "HQL": {
+      "name": "Tashikuergan Hongqilafu Airport",
+      "latitude": 37.661333,
+      "longitude": 75.288877,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0237"
+    },
+    "HQQ": {
+      "name": "Anyang Hongqiqu Airport",
+      "latitude": 35.870833,
+      "longitude": 114.461944,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZHQQ"
+    },
+    "HRB": {
+      "name": "Harbin Taiping International Airport",
+      "latitude": 45.623402,
+      "longitude": 126.25,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYHB"
+    },
+    "HSC": {
+      "name": "Shaoguan Danxia Airport",
+      "latitude": 24.9786,
+      "longitude": 113.420998,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0079"
+    },
+    "HSF": {
+      "name": "Suifenhe Dongning Airport",
+      "latitude": 44.453889,
+      "longitude": 130.843889,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYSD"
+    },
+    "HSJ": {
+      "name": "Zhengzhou Shangjie Airport",
+      "latitude": 34.842153,
+      "longitude": 113.273983,
+      "time_zone": "Asia/Shanghai",
+      "icao": "HSJ"
+    },
+    "HSN": {
+      "name": "Zhoushan Putuoshan International Airport",
+      "latitude": 29.933874,
+      "longitude": 122.362307,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSZS"
+    },
+    "HTN": {
+      "name": "Hotan Airport",
+      "latitude": 37.03850173950195,
+      "longitude": 79.86489868164062,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWTN"
+    },
+    "HTT": {
+      "name": "Huatugou Airport",
+      "latitude": 38.201645,
+      "longitude": 90.837843,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLHX"
+    },
+    "HUO": {
+      "name": "Holingol Huolinhe Airport",
+      "latitude": 45.487222,
+      "longitude": 119.407222,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBHZ"
+    },
+    "HUZ": {
+      "name": "Huizhou Pingtan Airport",
+      "latitude": 23.049999,
+      "longitude": 114.599998,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGHZ"
+    },
+    "HXD": {
+      "name": "Haixi Delingha Airport",
+      "latitude": 37.125286,
+      "longitude": 97.268658,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLDL"
+    },
+    "HYN": {
+      "name": "Taizhou Luqiao Airport",
+      "latitude": 28.562201,
+      "longitude": 121.429001,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSLQ"
+    },
+    "HZA": {
+      "name": "Heze Mudan Airport",
+      "latitude": 35.212972,
+      "longitude": 115.736748,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSHZ"
+    },
+    "HZG": {
+      "name": "Hanzhong Chenggu Airport",
+      "latitude": 33.133527,
+      "longitude": 107.203817,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLHZ"
+    },
+    "HZH": {
+      "name": "Liping Airport",
+      "latitude": 26.32217,
+      "longitude": 109.1499,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUNP"
+    },
+    "HZU": {
+      "name": "Chengdu Huaizhou Airport",
+      "latitude": 30.677339,
+      "longitude": 104.529397,
+      "time_zone": "Asia/Shanghai",
+      "icao": "HZU"
+    },
+    "INC": {
+      "name": "Yinchuan Hedong International Airport",
+      "latitude": 38.322758,
+      "longitude": 106.393214,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLIC"
+    },
+    "IQM": {
+      "name": "Qiemo Yudu Airport",
+      "latitude": 38.234516,
+      "longitude": 85.465462,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWCM"
+    },
+    "IQN": {
+      "name": "Qingyang Xifeng Airport",
+      "latitude": 35.802638,
+      "longitude": 107.598896,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLQY"
+    },
+    "JBK": {
+      "name": "Qitai Jiangbulake Airport",
+      "latitude": 44.166086,
+      "longitude": 89.55014,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0417"
+    },
+    "JDE": {
+      "name": "Jiande Qiandaohu General Airport",
+      "latitude": 29.360905,
+      "longitude": 119.180829,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0253"
+    },
+    "JDZ": {
+      "name": "Jingdezhen Luojia Airport",
+      "latitude": 29.3386,
+      "longitude": 117.176003,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSJD"
+    },
+    "JGD": {
+      "name": "Daxing'anling Elunchun Airport",
+      "latitude": 50.371389,
+      "longitude": 124.1175,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYJD"
+    },
+    "JGN": {
+      "name": "Jiayuguan International Airport",
+      "latitude": 39.859052,
+      "longitude": 98.339344,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLJQ"
+    },
+    "JGS": {
+      "name": "Jinggangshan Airport",
+      "latitude": 26.856899,
+      "longitude": 114.737,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0081"
+    },
+    "JHG": {
+      "name": "Xishuangbanna Gasa International Airport",
+      "latitude": 21.974648,
+      "longitude": 100.762224,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZPJH"
+    },
+    "JIC": {
+      "name": "Jinchang Jinchuan Airport",
+      "latitude": 38.542222,
+      "longitude": 102.348333,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLJC"
+    },
+    "JIL": {
+      "name": "Jilin Ertaizi Airport",
+      "latitude": 44.002652,
+      "longitude": 126.395244,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYJL"
+    },
+    "JIQ": {
+      "name": "Qianjiang Wulingshan Airport",
+      "latitude": 29.5133333333,
+      "longitude": 108.831111111,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUQJ"
+    },
+    "JIU": {
+      "name": "Jiujiang Lushan Airport",
+      "latitude": 29.476944,
+      "longitude": 115.801111,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSJJ"
+    },
+    "JJN": {
+      "name": "Quanzhou Jinjiang International Airport",
+      "latitude": 24.795855,
+      "longitude": 118.588599,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSQZ"
+    },
+    "JMJ": {
+      "name": "Lancang Jingmai Airport",
+      "latitude": 22.417733,
+      "longitude": 99.784012,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZPJM"
+    },
+    "JMU": {
+      "name": "Jiamusi Songjiang International Airport",
+      "latitude": 46.842793,
+      "longitude": 130.46426,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYJM"
+    },
+    "JNG": {
+      "name": "Jining Da'an Airport",
+      "latitude": 35.647358,
+      "longitude": 116.743269,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSJG"
+    },
+    "JNH": {
+      "name": "Jiaxing Nanhu Airport",
+      "latitude": 30.698056,
+      "longitude": 120.663056,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0154"
+    },
+    "JNZ": {
+      "name": "Jinzhou Bay Airport",
+      "latitude": 40.936032,
+      "longitude": 121.277114,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYJZ"
+    },
+    "JRJ": {
+      "name": "Ganzhou Ruijin Airport",
+      "latitude": 25.960236,
+      "longitude": 116.077016,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0347"
+    },
+    "JSJ": {
+      "name": "Jiansanjiang Shidi Airport",
+      "latitude": 47.108248,
+      "longitude": 132.65792,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYJS"
+    },
+    "JUH": {
+      "name": "Chizhou Jiuhuashan Airport",
+      "latitude": 30.7403,
+      "longitude": 117.6856,
+      "time_zone": "Asia/Shanghai",
+      "icao": "JUH"
+    },
+    "JUZ": {
+      "name": "Quzhou Airport",
+      "latitude": 28.96613,
+      "longitude": 118.898793,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSJU"
+    },
+    "JXA": {
+      "name": "Jixi Xingkaihu Airport",
+      "latitude": 45.293,
+      "longitude": 131.193,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYJX"
+    },
+    "JZH": {
+      "name": "Jiuzhai Huanglong Airport",
+      "latitude": 32.853333,
+      "longitude": 103.682222,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUJZ"
+    },
+    "KCA": {
+      "name": "Kuqa Qiuci Airport",
+      "latitude": 41.677856,
+      "longitude": 82.872917,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWKC"
+    },
+    "KGT": {
+      "name": "Kangding Airport",
+      "latitude": 30.142464,
+      "longitude": 101.73872,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUKD"
+    },
+    "KHG": {
+      "name": "Kashgar Laining International Airport",
+      "latitude": 39.542273,
+      "longitude": 76.02023,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWSH"
+    },
+    "KHN": {
+      "name": "Nanchang Changbei International Airport",
+      "latitude": 28.864815,
+      "longitude": 115.90271,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSCN"
+    },
+    "KJH": {
+      "name": "Kaili Huangping Airport",
+      "latitude": 26.972,
+      "longitude": 107.988,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUKJ"
+    },
+    "KJI": {
+      "name": "Burqin Kanas Airport",
+      "latitude": 48.2223,
+      "longitude": 86.9959,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWKN"
+    },
+    "KMG": {
+      "name": "Kunming Changshui International Airport",
+      "latitude": 25.110313,
+      "longitude": 102.936743,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZPPP"
+    },
+    "KOW": {
+      "name": "Ganzhou Huangjin Airport",
+      "latitude": 25.853333,
+      "longitude": 114.778889,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSGZ"
+    },
+    "KRL": {
+      "name": "Korla Licheng Airport",
+      "latitude": 41.614979,
+      "longitude": 86.140817,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWKL"
+    },
+    "KRY": {
+      "name": "Karamay Airport",
+      "latitude": 45.46655,
+      "longitude": 84.9527,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWKM"
+    },
+    "KWE": {
+      "name": "Guiyang Longdongbao International Airport",
+      "latitude": 26.541805,
+      "longitude": 106.80402,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUGY"
+    },
+    "KWL": {
+      "name": "Guilin Liangjiang International Airport",
+      "latitude": 25.219828,
+      "longitude": 110.039553,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGKL"
+    },
+    "LCS": {
+      "name": "Longchuan Guangsong Airport",
+      "latitude": 24.26652,
+      "longitude": 97.9048,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0384"
+    },
+    "LCT": {
+      "name": "Shijiazhuang Luancheng Airport",
+      "latitude": 37.91305,
+      "longitude": 114.59166,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0177"
+    },
+    "LCX": {
+      "name": "Liancheng Guanzhishan Airport",
+      "latitude": 25.67592,
+      "longitude": 116.745907,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSLO"
+    },
+    "LDS": {
+      "name": "Yichun Lindu Airport",
+      "latitude": 47.752056,
+      "longitude": 129.019125,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYLD"
+    },
+    "LFH": {
+      "name": "Lanping Fenghua General Airport",
+      "latitude": 26.64518,
+      "longitude": 99.54419,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0385"
+    },
+    "LFQ": {
+      "name": "Linfen Yaodu Airport",
+      "latitude": 36.132629,
+      "longitude": 111.641236,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBLF"
+    },
+    "LGZ": {
+      "name": "Shannan Longzi Airport",
+      "latitude": 28.422422,
+      "longitude": 92.348082,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUSH"
+    },
+    "LHK": {
+      "name": "Guangzhou MR Air Base / Guanghua Airport",
+      "latitude": 32.38866,
+      "longitude": 111.69425,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZHGH"
+    },
+    "LHW": {
+      "name": "Lanzhou Zhongchuan International Airport",
+      "latitude": 36.515202,
+      "longitude": 103.620003,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLLL"
+    },
+    "LIA": {
+      "name": "Liangping Airport",
+      "latitude": 30.679399,
+      "longitude": 107.786003,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZULP"
+    },
+    "LIJ": {
+      "name": "Lishui Airport",
+      "latitude": 28.3727,
+      "longitude": 119.839,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0422"
+    },
+    "LJG": {
+      "name": "Lijiang Sanyi International Airport",
+      "latitude": 26.677483,
+      "longitude": 100.244944,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZPLJ"
+    },
+    "LLB": {
+      "name": "Libo Airport",
+      "latitude": 25.4525,
+      "longitude": 107.961667,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZULB"
+    },
+    "LLF": {
+      "name": "Yongzhou Lingling Airport",
+      "latitude": 26.338661,
+      "longitude": 111.610043,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGLG"
+    },
+    "LLV": {
+      "name": "Lüliang Dawu Airport",
+      "latitude": 37.683333,
+      "longitude": 111.142778,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBLL"
+    },
+    "LNJ": {
+      "name": "Lincang Boshang Airport",
+      "latitude": 23.7381,
+      "longitude": 100.025002,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZPLC"
+    },
+    "LNL": {
+      "name": "Longnan Chengzhou Airport",
+      "latitude": 33.789918,
+      "longitude": 105.790014,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLLN"
+    },
+    "LPF": {
+      "name": "Liupanshui Yuezhao Airport",
+      "latitude": 26.609417,
+      "longitude": 104.979,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUPS"
+    },
+    "LSG": {
+      "name": "Leshan Airport",
+      "latitude": 29.438627,
+      "longitude": 103.749218,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0249"
+    },
+    "LUM": {
+      "name": "Dehong Mangshi International Airport",
+      "latitude": 24.4011,
+      "longitude": 98.5317,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZPMS"
+    },
+    "LXA": {
+      "name": "Lhasa Gonggar International Airport",
+      "latitude": 29.298001,
+      "longitude": 90.911951,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZULS"
+    },
+    "LYA": {
+      "name": "Luoyang Beijiao Airport",
+      "latitude": 34.7411,
+      "longitude": 112.388,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZHLY"
+    },
+    "LYG": {
+      "name": "Lianyungang Huaguoshan International Airport",
+      "latitude": 34.41406,
+      "longitude": 119.17899,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSLG"
+    },
+    "LYI": {
+      "name": "Linyi Qiyang Airport",
+      "latitude": 35.052918,
+      "longitude": 118.411828,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSLY"
+    },
+    "LZG": {
+      "name": "Langzhong Gucheng Airport",
+      "latitude": 31.50191,
+      "longitude": 106.034417,
+      "time_zone": "Asia/Shanghai",
+      "icao": "LZG"
+    },
+    "LZH": {
+      "name": "Liuzhou Bailian Airport / Bailian Air Base",
+      "latitude": 24.2075,
+      "longitude": 109.390999,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGZH"
+    },
+    "LZO": {
+      "name": "Luzhou Yunlong Airport",
+      "latitude": 29.030357,
+      "longitude": 105.468407,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZULZ"
+    },
+    "LZY": {
+      "name": "Nyingchi Mainling Airport",
+      "latitude": 29.303301,
+      "longitude": 94.335297,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUNZ"
+    },
+    "MDG": {
+      "name": "Mudanjiang Hailang International Airport",
+      "latitude": 44.525172,
+      "longitude": 129.568634,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYMD"
+    },
+    "MIG": {
+      "name": "Mianyang Nanjiao Airport",
+      "latitude": 31.428101,
+      "longitude": 104.740997,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUMY"
+    },
+    "MXZ": {
+      "name": "Meizhou Meixian Changgangji International Airport",
+      "latitude": 24.263425,
+      "longitude": 116.097857,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGMX"
+    },
+    "NAO": {
+      "name": "Nanchong Gaoping Airport",
+      "latitude": 30.798104,
+      "longitude": 106.16415,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUNC"
+    },
+    "NAY": {
+      "name": "Beijing Nanyuan Airport",
+      "latitude": 39.782158,
+      "longitude": 116.386299,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0445"
+    },
+    "NBS": {
+      "name": "Changbaishan Airport",
+      "latitude": 42.066944,
+      "longitude": 127.602222,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYBS"
+    },
+    "NDG": {
+      "name": "Qiqihar Sanjiazi Airport",
+      "latitude": 47.229969,
+      "longitude": 123.914179,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYQQ"
+    },
+    "NGB": {
+      "name": "Ningbo Lishe International Airport",
+      "latitude": 29.82670021057129,
+      "longitude": 121.46199798583984,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSNB"
+    },
+    "NGQ": {
+      "name": "Ngari Gunsa Airport",
+      "latitude": 32.09794,
+      "longitude": 80.053971,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUAL"
+    },
+    "NJJ": {
+      "name": "Nenjiang Melgen Airport",
+      "latitude": 49.236372,
+      "longitude": 125.337052,
+      "time_zone": "Asia/Shanghai",
+      "icao": "NJJ"
+    },
+    "NKG": {
+      "name": "Nanjing Lukou International Airport",
+      "latitude": 31.735032,
+      "longitude": 118.865949,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSNJ"
+    },
+    "NLH": {
+      "name": "Ninglang Luguhu Airport",
+      "latitude": 27.5403,
+      "longitude": 100.7593,
+      "time_zone": "Asia/Shanghai",
+      "icao": "NLH"
+    },
+    "NLT": {
+      "name": "Xinyuan Nalati Airport",
+      "latitude": 43.4318,
+      "longitude": 83.3786,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWNL"
+    },
+    "NNG": {
+      "name": "Nanning Wuxu International Airport",
+      "latitude": 22.598071,
+      "longitude": 108.181922,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGNN"
+    },
+    "NNY": {
+      "name": "Nanyang Jiangying Airport",
+      "latitude": 32.982696,
+      "longitude": 112.617467,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZHNY"
+    },
+    "NTG": {
+      "name": "Nantong Xingdong International Airport",
+      "latitude": 32.073566,
+      "longitude": 120.980076,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSNT"
+    },
+    "NZH": {
+      "name": "Manzhouli Xijiao Airport",
+      "latitude": 49.566667,
+      "longitude": 117.33,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBMZ"
+    },
+    "NZL": {
+      "name": "Zhalantun Genghis Khan Airport",
+      "latitude": 47.865942,
+      "longitude": 122.768662,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBZL"
+    },
+    "OHE": {
+      "name": "Mohe Gulian Airport",
+      "latitude": 52.916871,
+      "longitude": 122.422759,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYMH"
+    },
+    "OTO": {
+      "name": "Otog Banner Wulan Airport",
+      "latitude": 39.03139,
+      "longitude": 107.98889,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0427"
+    },
+    "OTQ": {
+      "name": "Otog Front Banner Oljoq Airport",
+      "latitude": 38.1712,
+      "longitude": 107.3905,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0416"
+    },
+    "PEK": {
+      "name": "Beijing Capital International Airport",
+      "latitude": 40.077349,
+      "longitude": 116.596702,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBAA"
+    },
+    "PFA": {
+      "name": "Harbin Pingfang Airport",
+      "latitude": 45.59886,
+      "longitude": 126.65808,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0193"
+    },
+    "PKX": {
+      "name": "Beijing Daxing International Airport",
+      "latitude": 39.501289,
+      "longitude": 116.413967,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBAD"
+    },
+    "PNJ": {
+      "name": "Penglai Shahekou Airport",
+      "latitude": 37.80473,
+      "longitude": 120.80954,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0217"
+    },
+    "PVG": {
+      "name": "Shanghai Pudong International Airport",
+      "latitude": 31.1434,
+      "longitude": 121.805,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSPD"
+    },
+    "PZI": {
+      "name": "Panzhihua Bao'anying Airport",
+      "latitude": 26.54,
+      "longitude": 101.79852,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUZH"
+    },
+    "QSZ": {
+      "name": "Shache Airport",
+      "latitude": 38.24542,
+      "longitude": 77.056149,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWSC"
+    },
+    "RHT": {
+      "name": "Alxa Right Banner Badanjilin Airport",
+      "latitude": 39.225,
+      "longitude": 101.546,
+      "time_zone": "Asia/Shanghai",
+      "icao": "RHT"
+    },
+    "RIZ": {
+      "name": "Rizhao Shanzihe Airport",
+      "latitude": 35.405033,
+      "longitude": 119.324403,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSRZ"
+    },
+    "RKZ": {
+      "name": "Xigaze Peace Airport / Shigatse Air Base",
+      "latitude": 29.350876,
+      "longitude": 89.299157,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZURK"
+    },
+    "RLK": {
+      "name": "Bayannur Tianjitai Airport",
+      "latitude": 40.926358,
+      "longitude": 107.74093,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBYZ"
+    },
+    "RQA": {
+      "name": "Ruoqiang Loulan Airport",
+      "latitude": 38.974722,
+      "longitude": 88.008333,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWRQ"
+    },
+    "RUG": {
+      "name": "Rugao Air Base",
+      "latitude": 32.258341,
+      "longitude": 120.501131,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSRG"
+    },
+    "SHA": {
+      "name": "Shanghai Hongqiao International Airport",
+      "latitude": 31.198104,
+      "longitude": 121.33426,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSSS"
+    },
+    "SHE": {
+      "name": "Shenyang Taoxian International Airport",
+      "latitude": 41.6398,
+      "longitude": 123.483668,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYTX"
+    },
+    "SHF": {
+      "name": "Shihezi Huayuan Airport",
+      "latitude": 44.2421,
+      "longitude": 85.8905,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWHZ"
+    },
+    "SHS": {
+      "name": "Jingzhou Shashi Airport",
+      "latitude": 30.29281,
+      "longitude": 112.44854,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZHJZ"
+    },
+    "SIA": {
+      "name": "Xi'an Xiguan Airport",
+      "latitude": 34.376701,
+      "longitude": 109.120003,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLSN"
+    },
+    "SJW": {
+      "name": "Shijiazhuang Zhengding International Airport",
+      "latitude": 38.280701,
+      "longitude": 114.696999,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBSJ"
+    },
+    "SQD": {
+      "name": "Shangrao Sanqingshan Airport",
+      "latitude": 28.3797,
+      "longitude": 117.9643,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSSR"
+    },
+    "SQJ": {
+      "name": "Sanming Shaxian Airport",
+      "latitude": 26.4263,
+      "longitude": 117.8336,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSSM"
+    },
+    "SWA": {
+      "name": "Jieyang Chaoshan International Airport",
+      "latitude": 23.552,
+      "longitude": 116.5033,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGOW"
+    },
+    "SXJ": {
+      "name": "Shanshan Airport",
+      "latitude": 42.911701,
+      "longitude": 90.247498,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWSS"
+    },
+    "SYM": {
+      "name": "Pu'er Simao Airport",
+      "latitude": 22.793301,
+      "longitude": 100.959,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZPSM"
+    },
+    "SYX": {
+      "name": "Sanya Phoenix International Airport",
+      "latitude": 18.3029,
+      "longitude": 109.412003,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZJSY"
+    },
+    "SZH": {
+      "name": "Shuozhou Zirun Airport",
+      "latitude": 39.273241,
+      "longitude": 112.691552,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBSG"
+    },
+    "SZV": {
+      "name": "Suzhou Guangfu Airport",
+      "latitude": 31.2631,
+      "longitude": 120.401001,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSSZ"
+    },
+    "SZX": {
+      "name": "Shenzhen Bao'an International Airport",
+      "latitude": 22.639474,
+      "longitude": 113.803262,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGSZ"
+    },
+    "TAO": {
+      "name": "Qingdao Jiaodong International Airport",
+      "latitude": 36.361953,
+      "longitude": 120.088171,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSQD"
+    },
+    "TCG": {
+      "name": "Tacheng Qianquan Airport",
+      "latitude": 46.672501,
+      "longitude": 83.340797,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWTC"
+    },
+    "TCZ": {
+      "name": "Tengchong Tuofeng Airport",
+      "latitude": 24.938056,
+      "longitude": 98.485833,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUTC"
+    },
+    "TEN": {
+      "name": "Tongren Fenghuang Airport",
+      "latitude": 27.883333,
+      "longitude": 109.308889,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUTR"
+    },
+    "TFU": {
+      "name": "Chengdu Tianfu International Airport",
+      "latitude": 30.31252,
+      "longitude": 104.441284,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUTF"
+    },
+    "TGO": {
+      "name": "Tongliao Airport",
+      "latitude": 43.556702,
+      "longitude": 122.199997,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBTL"
+    },
+    "THQ": {
+      "name": "Tianshui Maijishan Airport",
+      "latitude": 34.5601,
+      "longitude": 105.860343,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLTS"
+    },
+    "TLQ": {
+      "name": "Turpan Jiaohe Airport",
+      "latitude": 43.0308,
+      "longitude": 89.0987,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWTL"
+    },
+    "TNA": {
+      "name": "Jinan Yaoqiang International Airport",
+      "latitude": 36.857201,
+      "longitude": 117.216003,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSJN"
+    },
+    "TNH": {
+      "name": "Tonghua Sanyuanpu Airport",
+      "latitude": 42.048435,
+      "longitude": 125.733963,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYTN"
+    },
+    "TSN": {
+      "name": "Tianjin Binhai International Airport",
+      "latitude": 39.124401092499994,
+      "longitude": 117.346000671,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBTJ"
+    },
+    "TVS": {
+      "name": "Tangshan Sannühe Airport",
+      "latitude": 39.7178,
+      "longitude": 118.002625,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBSN"
+    },
+    "TWC": {
+      "name": "Tumxuk Tangwangcheng Airport",
+      "latitude": 39.886663,
+      "longitude": 79.233408,
+      "time_zone": "Asia/Shanghai",
+      "icao": "TWC"
+    },
+    "TXN": {
+      "name": "Huangshan Tunxi International Airport",
+      "latitude": 29.733299,
+      "longitude": 118.255997,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSTX"
+    },
+    "TYC": {
+      "name": "Taiyuan Yaocheng Airport",
+      "latitude": 37.50312,
+      "longitude": 112.424126,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0300"
+    },
+    "TYN": {
+      "name": "Taiyuan Wusu International Airport",
+      "latitude": 37.746899,
+      "longitude": 112.627998,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBYN"
+    },
+    "UCB": {
+      "name": "Ulanqab Jining Airport",
+      "latitude": 41.130266,
+      "longitude": 113.107274,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBUC"
+    },
+    "URC": {
+      "name": "Ürümqi Tianshan International Airport",
+      "latitude": 43.913584,
+      "longitude": 87.479372,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWWW"
+    },
+    "UYN": {
+      "name": "Yulin Yuyang Airport",
+      "latitude": 38.35971,
+      "longitude": 109.590927,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLYL"
+    },
+    "WDS": {
+      "name": "Shiyan Wudangshan Airport",
+      "latitude": 32.592889,
+      "longitude": 110.906296,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZHSY"
+    },
+    "WEF": {
+      "name": "Weifang Nanyuan Airport",
+      "latitude": 36.646702,
+      "longitude": 119.119003,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSWF"
+    },
+    "WEH": {
+      "name": "Weihai Dashuibo Airport",
+      "latitude": 37.187099,
+      "longitude": 122.228996,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSWH"
+    },
+    "WGN": {
+      "name": "Shaoyang Wugang Airport",
+      "latitude": 26.806123,
+      "longitude": 110.641042,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGSY"
+    },
+    "WHA": {
+      "name": "Wuhu Xuanzhou Airport",
+      "latitude": 31.1045,
+      "longitude": 118.66687,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSWA"
+    },
+    "WHN": {
+      "name": "Wuhan Hannan Municipal Airport",
+      "latitude": 30.25521,
+      "longitude": 114.062805,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0178"
+    },
+    "WHU": {
+      "name": "Wuhu Wanli Airport / Wuhu Air Base",
+      "latitude": 31.3906,
+      "longitude": 118.408997,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSWU"
+    },
+    "WMT": {
+      "name": "Zunyi Maotai Airport",
+      "latitude": 27.961837,
+      "longitude": 106.435416,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUMT"
+    },
+    "WNH": {
+      "name": "Wenshan Puzhehei Airport",
+      "latitude": 23.5583,
+      "longitude": 104.3255,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZPWS"
+    },
+    "WNZ": {
+      "name": "Wenzhou Longwan International Airport",
+      "latitude": 27.910572,
+      "longitude": 120.853465,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSWZ"
+    },
+    "WRH": {
+      "name": "Wuerhe Airport",
+      "latitude": 46.01761,
+      "longitude": 85.657436,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0329"
+    },
+    "WSK": {
+      "name": "Chongqing Wushan Airport",
+      "latitude": 31.06896,
+      "longitude": 109.708958,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUWS"
+    },
+    "WUA": {
+      "name": "Wuhai Airport",
+      "latitude": 39.7934,
+      "longitude": 106.7993,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBUH"
+    },
+    "WUH": {
+      "name": "Wuhan Tianhe International Airport",
+      "latitude": 30.774798,
+      "longitude": 114.213723,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZHHH"
+    },
+    "WUS": {
+      "name": "Nanping Wuyishan Airport",
+      "latitude": 27.7019,
+      "longitude": 118.000999,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSWY"
+    },
+    "WUT": {
+      "name": "Xinzhou Wutaishan Airport",
+      "latitude": 38.597456,
+      "longitude": 112.969173,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBXZ"
+    },
+    "WUX": {
+      "name": "Sunan Shuofang International Airport",
+      "latitude": 31.496952,
+      "longitude": 120.43038,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSWX"
+    },
+    "WUZ": {
+      "name": "Wuzhou Xijiang Airport",
+      "latitude": 23.40316,
+      "longitude": 111.09331,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGWZ"
+    },
+    "WXN": {
+      "name": "Wanzhou Wuqiao Airport",
+      "latitude": 30.8017,
+      "longitude": 108.433,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUWX"
+    },
+    "WZQ": {
+      "name": "Urad Middle Banner Airport",
+      "latitude": 41.460289,
+      "longitude": 108.539085,
+      "time_zone": "Asia/Shanghai",
+      "icao": "WZQ"
+    },
+    "XAI": {
+      "name": "Xinyang Minggang Airport",
+      "latitude": 32.540819,
+      "longitude": 114.079141,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZHXY"
+    },
+    "XEN": {
+      "name": "Xingcheng Air Base",
+      "latitude": 40.580328,
+      "longitude": 120.700374,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYXC"
+    },
+    "XFN": {
+      "name": "Xiangyang Liuji Airport",
+      "latitude": 32.152222,
+      "longitude": 112.291666,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZHXF"
+    },
+    "XIC": {
+      "name": "Xichang Qingshan Airport",
+      "latitude": 27.9891,
+      "longitude": 102.183998,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUXC"
+    },
+    "XIL": {
+      "name": "Xilinhot Airport",
+      "latitude": 43.91559982299805,
+      "longitude": 115.96399688720703,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBXH"
+    },
+    "XIN": {
+      "name": "Xingning Air Base",
+      "latitude": 24.1492,
+      "longitude": 115.758003,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGXN"
+    },
+    "XIY": {
+      "name": "Xi'an Xianyang International Airport",
+      "latitude": 34.442207,
+      "longitude": 108.762385,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLXY"
+    },
+    "XMN": {
+      "name": "Xiamen Gaoqi International Airport",
+      "latitude": 24.543889,
+      "longitude": 118.127454,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSAM"
+    },
+    "XNN": {
+      "name": "Xining Caojiabao International Airport",
+      "latitude": 36.52775,
+      "longitude": 102.040215,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLXN"
+    },
+    "XNT": {
+      "name": "Xingtai Dalian Airport",
+      "latitude": 36.8831,
+      "longitude": 114.4293,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBXT"
+    },
+    "XRQ": {
+      "name": "New Barag Right Banner Baogede Airport",
+      "latitude": 48.575585,
+      "longitude": 116.939382,
+      "time_zone": "Asia/Shanghai",
+      "icao": "XRQ"
+    },
+    "XUZ": {
+      "name": "Xuzhou Guanyin International Airport",
+      "latitude": 34.059056,
+      "longitude": 117.555278,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSXZ"
+    },
+    "YBP": {
+      "name": "Yibin Wuliangye Airport",
+      "latitude": 28.858431,
+      "longitude": 104.526157,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUYB"
+    },
+    "YCU": {
+      "name": "Yuncheng Yanhu International Airport",
+      "latitude": 35.117823,
+      "longitude": 111.034023,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBYC"
+    },
+    "YEH": {
+      "name": "Yinchuan Yueyahu Airport",
+      "latitude": 38.588095,
+      "longitude": 106.539788,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0362"
+    },
+    "YGA": {
+      "name": "Yongchuan Da'an General Airport",
+      "latitude": 29.356667,
+      "longitude": 106.010441,
+      "time_zone": "Asia/Shanghai",
+      "icao": "YGA"
+    },
+    "YHJ": {
+      "name": "Nanchang Yaohu Airport",
+      "latitude": 28.700972,
+      "longitude": 116.107694,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0423"
+    },
+    "YIC": {
+      "name": "Yichun Mingyueshan Airport",
+      "latitude": 27.8025,
+      "longitude": 114.3062,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSYC"
+    },
+    "YIE": {
+      "name": "Arxan Yi'ershi Airport",
+      "latitude": 47.3106,
+      "longitude": 119.9117,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBES"
+    },
+    "YIH": {
+      "name": "Yichang Sanxia Airport",
+      "latitude": 30.554132,
+      "longitude": 111.482563,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZHYC"
+    },
+    "YIN": {
+      "name": "Ili Yining International Airport",
+      "latitude": 43.955799,
+      "longitude": 81.330299,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWYN"
+    },
+    "YIW": {
+      "name": "Yiwu Airport",
+      "latitude": 29.342095,
+      "longitude": 120.03116,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSYW"
+    },
+    "YKH": {
+      "name": "Yingkou Lanqi Airport",
+      "latitude": 40.542524,
+      "longitude": 122.3586,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYYK"
+    },
+    "YLX": {
+      "name": "Yulin Fumian Airport",
+      "latitude": 22.433042,
+      "longitude": 110.119996,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGYL"
+    },
+    "YNJ": {
+      "name": "Yanji Chaoyangchuan Airport",
+      "latitude": 42.8828010559,
+      "longitude": 129.451004028,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYYJ"
+    },
+    "YNT": {
+      "name": "Yantai Penglai International Airport",
+      "latitude": 37.659724,
+      "longitude": 120.978124,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSYT"
+    },
+    "YNZ": {
+      "name": "Yancheng Nanyang International Airport",
+      "latitude": 33.428317,
+      "longitude": 120.20545,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSYN"
+    },
+    "YSQ": {
+      "name": "Songyuan Chaganhu Airport",
+      "latitude": 44.931143,
+      "longitude": 124.552121,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZYSQ"
+    },
+    "YTW": {
+      "name": "Yutian Wanfang Airport",
+      "latitude": 36.8085,
+      "longitude": 81.7827,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZWYT"
+    },
+    "YTY": {
+      "name": "Yangzhou Taizhou Airport",
+      "latitude": 32.5634,
+      "longitude": 119.7198,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZSYA"
+    },
+    "YUA": {
+      "name": "Yuanmou Air Base",
+      "latitude": 25.737499,
+      "longitude": 101.882004,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZPYM"
+    },
+    "YUS": {
+      "name": "Yushu Batang Airport",
+      "latitude": 32.836389,
+      "longitude": 97.036389,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLYS"
+    },
+    "YYA": {
+      "name": "Yueyang Sanhe Airport",
+      "latitude": 29.311699,
+      "longitude": 113.281574,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGYY"
+    },
+    "YZY": {
+      "name": "Zhangye Ganzhou Airport",
+      "latitude": 38.801899,
+      "longitude": 100.675003,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLZY"
+    },
+    "ZAT": {
+      "name": "Zhaotong Zhaoyang Airport",
+      "latitude": 27.205843,
+      "longitude": 103.691511,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0421"
+    },
+    "ZFL": {
+      "name": "Zhaosu Tianma Airport",
+      "latitude": 43.088477,
+      "longitude": 81.223013,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0359"
+    },
+    "ZHA": {
+      "name": "Zhanjiang Wuchuan International Airport",
+      "latitude": 21.481667,
+      "longitude": 110.590278,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGZJ"
+    },
+    "ZHY": {
+      "name": "Zhongwei Shapotou Airport",
+      "latitude": 37.573125,
+      "longitude": 105.154454,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZLZW"
+    },
+    "ZKL": {
+      "name": "Zigong Fengming Airport",
+      "latitude": 29.376484,
+      "longitude": 104.625789,
+      "time_zone": "Asia/Shanghai",
+      "icao": "CN-0051"
+    },
+    "ZQZ": {
+      "name": "Zhangjiakou Ningyuan Airport",
+      "latitude": 40.738664,
+      "longitude": 114.933395,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZBZJ"
+    },
+    "ZUH": {
+      "name": "Zhuhai Jinwan Airport",
+      "latitude": 22.006399,
+      "longitude": 113.375999,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZGSD"
+    },
+    "ZYI": {
+      "name": "Zunyi Xinzhou Airport",
+      "latitude": 27.810723,
+      "longitude": 107.247189,
+      "time_zone": "Asia/Shanghai",
+      "icao": "ZUZY"
+    }
+  }
+}

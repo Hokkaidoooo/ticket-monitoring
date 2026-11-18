@@ -484,7 +484,7 @@ def test_main_and_webui_resolve_the_same_user_data_root(
     monkeypatch.setenv("TM_USER_DATA_DIR", str(env_dir))
 
     import main
-    injected = main._session_user_data(crawler_section)
+    injected = main.resolve_query_sessions(crawler_section)["monitor"]["user_data_dir"]
     got_crawler = _crawler_base(injected)
     got_web = _webui_base({"crawler": dict(crawler_section)})
     assert got_crawler == got_web, (
@@ -541,10 +541,12 @@ def test_both_sides_resolve_through_the_one_shared_helper():
     第 N 次改动必然再分一次。所以这里钉住：两侧的根目录都来自
     `core.yield_stats.user_data_root()`，谁也不另起一套判据。
     """
-    assert "user_data_root(" in MAIN, "main.py 没走唯一口径"
-    seg = MAIN[MAIN.index("def _session_user_data("):][:1500]
-    assert "user_data_root(" in seg, \
-        "`_session_user_data()` 没走唯一口径（又自己判了一遍配置语义）"
+    import main
+    import webui
+    from core.query_sessions import resolve_query_sessions
+
+    assert main.resolve_query_sessions is resolve_query_sessions
+    assert webui.resolve_query_sessions is resolve_query_sessions
 
     web = webui_full_src()
     i = web.index("def _ud_root(")
@@ -577,7 +579,8 @@ def test_explicit_absolute_user_data_dir_is_honoured_by_both(
     monkeypatch.setenv("TM_USER_DATA_DIR", str(tmp_path / "ud_env"))
 
     import main
-    injected = main._session_user_data({"user_data_dir": str(abs_dir)})
+    injected = main.resolve_query_sessions({"user_data_dir": str(abs_dir)})[
+        "monitor"]["user_data_dir"]
     assert os.path.normcase(os.path.abspath(injected)) == \
         os.path.normcase(os.path.abspath(str(abs_dir)))
     assert _crawler_base(injected) == _webui_base(
@@ -590,7 +593,8 @@ def test_without_env_both_sides_fall_back_to_the_repo_user_data(
     monkeypatch.delenv("TM_USER_DATA_DIR", raising=False)
 
     import main
-    injected = main._session_user_data({"user_data_dir": "user_data"})
+    injected = main.resolve_query_sessions({"user_data_dir": "user_data"})[
+        "monitor"]["user_data_dir"]
     assert os.path.normcase(os.path.abspath(injected)) == \
         os.path.normcase(os.path.abspath(os.path.join(ROOT, "user_data")))
     assert _crawler_base(injected) == _webui_base(
@@ -614,7 +618,7 @@ def test_halt_written_by_the_console_is_read_by_the_crawler(
 
     cfg = {"crawler": {"user_data_dir": "user_data"},
            "output": {"db_path": str(tmp_path / "t.db")}}
-    injected = main._session_user_data(cfg["crawler"])
+    injected = main.resolve_query_sessions(cfg["crawler"])["monitor"]["user_data_dir"]
     inst = REGISTRY["ctrip"]({"user_data_dir": injected},
                              logging.getLogger("r1063t10"))
     halt_dir = _webui_base(cfg)

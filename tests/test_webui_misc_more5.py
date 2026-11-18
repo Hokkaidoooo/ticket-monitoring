@@ -1203,8 +1203,10 @@ def test_hash_user_restore_after_restoreui():
     """启动恢复在 restoreUI 之后（否则 localStorage U 覆盖 hash）。"""
     import webui
     src = webui.PAGE
-    i_restore = src.find("restoreUI();mkactAll();")
-    i_hash_u = src.find("深链用户段恢复")
+    start = src.index("function initPage(){")
+    startup = src[start:src.index("initPage();", start)]
+    i_restore = startup.find("restoreUI();mkactAll();")
+    i_hash_u = startup.find("restoreHashUser();")
     assert i_restore != -1 and i_hash_u != -1 and i_restore < i_hash_u
 
 

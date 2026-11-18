@@ -138,6 +138,8 @@ def _isolate_webui_probe_auth(monkeypatch):
     if "webui" not in _sys.modules:
         return
     import webui as _w
+    monkeypatch.setattr(_w._State, "query_sessions", None)
+    monkeypatch.setattr(_w._State, "boot_cfg", None)
     monkeypatch.setattr(_w, "_PROBE_AUTH", {}, raising=False)
     monkeypatch.setattr(_w, "_IN_HEALTH_DECORATE", False, raising=False)
     # r805cf：登录状态现在也读 `fetch_paths` 的滑块/登录门。测试默认不读

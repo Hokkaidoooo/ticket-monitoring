@@ -9,13 +9,19 @@ import hashlib
 import re
 import threading
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 
 from core.citydata import CITY, CODE_NAME
 from core.intl import (INTL_CITY_HOT, INTL_CITY_NAME, INTL_CITY_SHORT,
                        airport_city_code)
 from core.models import PRICE_MAX
+from core.pricequote import quote_from_record, quote_sort_key
+from core.query_sessions import (
+    AnonymousSessionUnsupportedError,
+    anonymous_query_enabled,
+    ensure_session_supported,
+)
 # 「链路被策略停用」的唯一词面（与闸门同一个常量，别在这里抄一句中文）
 from core.pacing import PATH_DISABLED
 from core.specials import (
@@ -68,7 +74,7 @@ _FLIGGY_TIMEOUT_S = 20.0
 _FLIGGY_TIMEOUT_RATIO = 0.9
 
 # 价格口径词面（来源可核实才标含税/裸价，其余一律未知）
-_BASIS_LABEL = {"tax_included": "含税总价", "bare": "裸价不含税",
+_BASIS_LABEL = {"tax_included": "含税报价", "bare": "裸价不含税",
                 "unknown": "口径未标注"}
 
 # ── 链路闸门 + 每源预算（r1063 T11）───────────────────────────────────
@@ -304,6 +310,28 @@ class RadarQuery:
     end: date
     channels: list
     nationwide: bool = False
+    crawler_config: dict | None = field(default=None, repr=False, compare=False)
+
+
+def _radar_crawler_config(user_data_dir="user_data", proxy="",
+                          anonymous_query=False) -> dict:
+    cfg = {"user_data_dir": user_data_dir, "proxy": proxy,
+           "anonymous_query": anonymous_query}
+    cfg["anonymous_query"] = anonymous_query_enabled(cfg)
+    return cfg
+
+
+def _crawler_config(q: RadarQuery) -> dict:
+    """每个来源拿独立副本，避免渠道配置改写同一次查询的会话身份。"""
+    if q.crawler_config is None:
+        return _radar_crawler_config()
+    return dict(q.crawler_config)
+
+
+def _app_crawler_config(q: RadarQuery, platform: str) -> dict:
+    cfg = _crawler_config(q)
+    ensure_session_supported(platform, cfg)
+    return dict(cfg, android={"enabled": True})
 
 
 def _intl_name_index() -> dict:
@@ -386,8 +414,9 @@ def _in_range(d: str, q: RadarQuery) -> bool:
 
 
 def normalize(deals, q: RadarQuery) -> list:
-    """候选 deals -> 按日期/渠道聚合；同渠道同日期取最低。"""
+    """同日期/渠道按同一价格口径选价，保留最终费用确认状态。"""
     by_date = {}
+    date_bases = {}
     for d in deals or []:
         if not _in_range(d.date, q):
             continue
@@ -400,31 +429,33 @@ def normalize(deals, q: RadarQuery) -> list:
             continue
         rec = by_date.setdefault(d.date, {})
         cur = rec.get(ch)
-        if cur is None or float(d.src_price) < float(cur["price"]):
-            basis = getattr(d, "price_basis", "unknown") or "unknown"
-            if basis not in _BASIS_LABEL:
-                basis = "unknown"
-            rec[ch] = {
-                "price": float(d.src_price),
-                "kind": ("calendar" if d.src in
-                         ("ctrip", "fliggycal", "tongchengcal", "qunar",
-                          "tuniucal") else "board"),
-                "src": d.src,
-                "to": d.to_code or "",
-                "to_name": d.to_name or "",
-                "link": d.link or "",
-                "discount": d.discount or "",
-                "tax_included": getattr(d, "tax_included", None),
-                "basis": basis,
-                "basis_label": (getattr(d, "price_basis_label", "")
-                                or _BASIS_LABEL[basis]),
-            }
+        candidate = {
+            "price": float(d.src_price),
+            "kind": ("calendar" if d.src in
+                     ("ctrip", "fliggycal", "tongchengcal", "qunar",
+                      "tuniucal") else "board"),
+            "src": d.src,
+            "to": d.to_code or "",
+            "to_name": d.to_name or "",
+            "link": d.link or "",
+            "discount": d.discount or "",
+            "tax_included": getattr(d, "tax_included", None),
+            "basis": getattr(d, "price_basis", "unknown") or "unknown",
+        }
+        candidate["quote"] = quote_from_record(candidate)
+        basis = candidate["quote"]["basis"]
+        candidate["basis"] = basis
+        candidate["basis_label"] = _BASIS_LABEL[basis]
+        date_bases.setdefault(d.date, set()).add(basis)
+        if cur is None or quote_sort_key(candidate) < quote_sort_key(cur):
+            rec[ch] = candidate
     out = []
     for d in sorted(by_date):
         rec = by_date[d]
-        best_ch = min(rec, key=lambda c: rec[c]["price"])
+        best_ch = min(rec, key=lambda c: quote_sort_key(rec[c]))
         out.append({"date": d, "best": dict(rec[best_ch], channel=best_ch),
-                    "by_channel": rec})
+                    "by_channel": rec,
+                    "basis_mixed": len(date_bases[d]) > 1})
     return out
 
 
@@ -876,7 +907,8 @@ def _qunar_deals(q: RadarQuery, logger, proxy,
     global _QUNAR_COOLDOWN_UNTIL
     from urllib.parse import quote
     from crawlers.qunar import QunarCrawler
-    key = _cache_key(q, user_data_dir)
+    cfg = _crawler_config(q)
+    key = _cache_key(q, user_data_dir, extra=(cfg["anonymous_query"],))
     profile_hash = _profile_hash(q, user_data_dir)
     hit = _cache_get(_QUNAR_CACHE, key)
     if hit:
@@ -893,7 +925,8 @@ def _qunar_deals(q: RadarQuery, logger, proxy,
     arr = q.to_name or CODE_NAME.get(q.to_code, q.to_code)
     obj = QunarCrawler.fetch_low_price_calendar(
         dep, arr, q.start.isoformat(), q.end.isoformat(),
-        logger, timeout=22.0, proxy=proxy, profile_root=user_data_dir)
+        logger, timeout=22.0, proxy=proxy, profile_root=user_data_dir,
+        anonymous_query=cfg["anonymous_query"])
     if obj is None:
         # 单外发点：预算已用完就报 `timeout`+「预算耗尽」，别拿 `error`
         # 冒充对方拒绝（还会顺手把 10 分钟风控冷却挂上，双重误导）。
@@ -960,6 +993,7 @@ def _app_qunar_deals(q: RadarQuery, logger) -> tuple:
 
     采不到要区分「被拦/要登录」与「确实没有低价」：前者 error，后者 empty。
     """
+    crawler_cfg = _app_crawler_config(q, "app_qunar")
     from crawlers.app_qunar import AppQunarCrawler
     # 低价页日期带从**今天**起算（14 天）。雷达的日期区间可以是未来任意
     # 起点：只传区间长度会让 11-10..11-12 实际只抓 11-02..11-04，过滤后
@@ -975,9 +1009,7 @@ def _app_qunar_deals(q: RadarQuery, logger) -> tuple:
                q.start.isoformat(), q.end.isoformat()))
     days = max(1, min(_APP_QUNAR_STRIP_DAYS,
                      (min(q.end, strip_end) - today).days + 1))
-    crawler = AppQunarCrawler(
-        {"user_data_dir": "user_data",
-         "android": {"enabled": True}}, logger)
+    crawler = AppQunarCrawler(crawler_cfg, logger)
     rows_d = crawler.low_fare(q.from_code, q.to_code, days=days) or []
     out = []
     for r in rows_d:
@@ -1033,6 +1065,7 @@ def _app_ctrip_deals(q: RadarQuery, logger) -> tuple:
     54/53 天 ¥864–1530（两月视野，未滚动；11-10 查价）。
     页面未标含税/优惠口径，行标 `tax_included=None` + 「口径未标注」。
     """
+    crawler_cfg = _app_crawler_config(q, "app_ctrip")
     from datetime import date as _d, timedelta as _td
     from crawlers.app_ctrip import AppCtripCrawler
     today = _d.today()
@@ -1044,9 +1077,7 @@ def _app_ctrip_deals(q: RadarQuery, logger) -> tuple:
             "empty", "App 日历只覆盖今天起 62 天（到 %s），请求区间 %s..%s 超出"
             % (max_end.isoformat(), q.start.isoformat(), q.end.isoformat()))
     days = max(1, (min(q.end, max_end) - today).days + 1)
-    crawler = AppCtripCrawler(
-        {"user_data_dir": "user_data",
-         "android": {"enabled": True}}, logger)
+    crawler = AppCtripCrawler(crawler_cfg, logger)
     rows_d = crawler.low_fare(q.from_code, q.to_code, days=days) or []
     out = []
     for r in rows_d:
@@ -1102,6 +1133,7 @@ def _app_fliggy_deals(q: RadarQuery, logger) -> tuple:
     SHA→PEK 45 天返回 **35 行**、连续 20 天无缺口、最低 ¥338（11-10）。
     页面未标含税/优惠口径 → 行标 `tax_included=None` + 「口径未标注」。
     """
+    crawler_cfg = _app_crawler_config(q, "app_fliggy")
     from datetime import date as _d, timedelta as _td
     from crawlers.app_fliggy import AppFliggyCrawler
     today = _d.today()
@@ -1113,9 +1145,7 @@ def _app_fliggy_deals(q: RadarQuery, logger) -> tuple:
             "empty", "App 日历只覆盖今天起 62 天（到 %s），请求区间 %s..%s 超出"
             % (max_end.isoformat(), q.start.isoformat(), q.end.isoformat()))
     days = max(1, (min(q.end, max_end) - today).days + 1)
-    crawler = AppFliggyCrawler(
-        {"user_data_dir": "user_data",
-         "android": {"enabled": True}}, logger)
+    crawler = AppFliggyCrawler(crawler_cfg, logger)
     rows_d = crawler.low_fare(q.from_code, q.to_code, days=days) or []
     out = []
     for r in rows_d:
@@ -1158,6 +1188,7 @@ def _app_tongcheng_deals(q: RadarQuery, logger) -> tuple:
     同程 H5 日历同一契约（发现源，不是明细）。页面未标价格口径，行标
     `tax_included=None` + 「口径未标注」，不假设含税。
     """
+    crawler_cfg = _app_crawler_config(q, "app_tongcheng")
     from datetime import date as _d, timedelta as _td
     from crawlers.app_tongcheng import AppTongchengCrawler
     today = _d.today()
@@ -1169,9 +1200,7 @@ def _app_tongcheng_deals(q: RadarQuery, logger) -> tuple:
             "empty", "App 日历只覆盖今天起 60 天（到 %s），请求区间 %s..%s 超出"
             % (max_end.isoformat(), q.start.isoformat(), q.end.isoformat()))
     days = max(1, (min(q.end, max_end) - q.start).days + 1)
-    crawler = AppTongchengCrawler(
-        {"user_data_dir": "user_data",
-         "android": {"enabled": True}}, logger)
+    crawler = AppTongchengCrawler(crawler_cfg, logger)
     rows_d = crawler.low_fare(q.from_code, q.to_code, days=days,
                               anchor_ymd=q.start.isoformat()) or []
     out = []
@@ -1224,11 +1253,10 @@ def _app_zhixing_deals(q: RadarQuery, logger) -> tuple:
     页面本身没写价格口径（dump 里没有含税/优惠前/到手字样），所以只能标
     `tax_included=None` + 「口径未标注」，不假设含税。
     """
+    crawler_cfg = _app_crawler_config(q, "app_zhixing")
     from crawlers.app_zhixing import AppZhixingCrawler
     days = max(1, min(_RADAR_MAX_DAYS, (q.end - q.start).days + 1))
-    crawler = AppZhixingCrawler(
-        {"user_data_dir": "user_data",
-         "android": {"enabled": True}}, logger)
+    crawler = AppZhixingCrawler(crawler_cfg, logger)
     rows_d = crawler.low_fare(q.from_code, q.to_code, days=days,
                               anchor_ymd=q.start.isoformat()) or []
     out = []
@@ -1271,29 +1299,28 @@ def _entry(links, plat):
 
 
 def _pick_lowest(dates):
-    """跨渠道最低价：同口径比较优先含税总价。存在多口径时不把裸价
-    最小值冒充“最低”，而是标注 lowest_basis/basis_mixed 并保留跨口径
-    更便宜的记录供用户自行判断。"""
+    """完整最终价优先，其余按同一来源报价口径选择并标注待确认费用。"""
     if not dates:
         return None, False
     cands = []
     for d in dates:
         for ch, rec in d["by_channel"].items():
             item = dict(rec)
+            item["quote"] = quote_from_record(rec)
+            item["basis"] = item["quote"]["basis"]
             item["channel"] = ch
             item["date"] = d["date"]
             cands.append(item)
+    if not cands:
+        return None, False
     bases = {c.get("basis") or "unknown" for c in cands}
-    mixed = len(bases) > 1
-    tax_rows = [c for c in cands if c.get("tax_included") is True]
-    pool = tax_rows or cands
-    b = min(pool, key=lambda c: c["price"])
+    mixed = len(bases) > 1 or any(d.get("basis_mixed") for d in dates)
+    b = min(cands, key=quote_sort_key)
     basis = b.get("basis") or "unknown"
     low = {"date": b["date"], **{k: v for k, v in b.items() if k != "date"}}
     low["lowest_basis"] = basis
-    low["lowest_basis_label"] = (b.get("basis_label")
-                                 or _BASIS_LABEL.get(basis,
-                                                     _BASIS_LABEL["unknown"]))
+    low["lowest_basis_label"] = ("最终应付价" if b["quote"]["complete"]
+                                 else _BASIS_LABEL[b["quote"]["basis"]])
     low["basis_mixed"] = mixed
     low["lowest_date"] = b["date"]
     low["lowest_platform"] = b.get("channel")
@@ -1303,28 +1330,37 @@ def _pick_lowest(dates):
             "date": raw["date"], "price": raw["price"],
             "channel": raw.get("channel"), "basis": raw.get("basis"),
             "basis_label": raw.get("basis_label"),
+            "quote": raw["quote"],
         }
-    if mixed:
-        low["note"] = ("价格口径混合（含税/裸价/未标注）；最低价按%s口径"
-                       "选取，不可跨口径直接比较" % low["lowest_basis_label"])
-    elif b.get("tax_included") is not True:
-        low["note"] = "最低价为%s，不是含税总价" % low["lowest_basis_label"]
+    if not b["quote"]["complete"]:
+        low["note"] = ("最终价未确认；待核对：" + "、".join(b["quote"]["missing"]))
+        if mixed:
+            low["note"] += "。报价口径混合，来源报价按%s口径选取" % low["lowest_basis_label"]
     return low, mixed
 
 
 def build_radar(payload: dict, logger, proxy: str = "",
-                user_data_dir: str = "user_data") -> dict:
+                user_data_dir: str = "user_data",
+                anonymous_query: bool = False) -> dict:
     from core.channel_links import channel_links
     q = parse_query(payload)
+    crawler_cfg = _radar_crawler_config(user_data_dir, proxy, anonymous_query)
     # 机场码先归并城市码（PVG→SHA/PEK→BJS/NRT→TYO）：渠道按城市码收，
     # 直接用机场码会得到假空结果。
     q = replace(q, from_code=airport_city_code(q.from_code),
-                to_code=(airport_city_code(q.to_code) if q.to_code else ""))
+                to_code=(airport_city_code(q.to_code) if q.to_code else ""),
+                crawler_config=crawler_cfg)
     links = channel_links(q.from_code, q.to_code,
                           q.start.isoformat(), q.from_name, q.to_name)
     per = {}
     status = {}
     for ch in q.channels:
+        try:
+            ensure_session_supported(ch, crawler_cfg)
+        except AnonymousSessionUnsupportedError as ex:
+            status[ch] = _status("unsupported", str(ex))
+            per[ch] = []
+            continue
         if q.nationwide and ch != "ctrip":
             status[ch] = _status("unsupported", "全国模式仅携程支持")
             per[ch] = []

@@ -14,7 +14,7 @@
 import argparse
 import json
 
-__version__ = "1.7.6"
+__version__ = "1.7.6-local.3"
 import os
 import subprocess
 import sys
@@ -29,7 +29,15 @@ from core.models import Route, price_band_ok
 from core.intl import is_intl_route
 from core.pacing import Pacing, stagger_offset, parse_local_ts
 from core.storage import PriceStorage
+from core.query_sessions import (
+    AnonymousSessionUnsupportedError, crawler_for_session,
+    ensure_session_supported, resolve_query_sessions,
+)
 from core.alerter import Alerter, sanitize_desp
+from core.final_alerts import (
+    alert_state_key, flight_reminder_record, notification_price_note, reminder_price,
+    require_final_for_alerts,
+)
 from core.scheduler import run_scheduler
 from core.notifier import build_notifier
 from crawlers import REGISTRY
@@ -551,29 +559,6 @@ def _anchored(p, default):
     _first_run 的 300s 节流查到空库必不跳过（首轮重推）。"""
     p = (str(p) if p else "").strip() or default
     return p if os.path.isabs(p) else os.path.join(_REPO_ROOT, p)
-
-
-def _session_user_data(crawler_cfg):
-    """采集器的 user_data 根目录——**唯一口径**的绝对形态。
-
-    这就是注进每条爬虫 `config["user_data_dir"]` 的那个值。它必须与界面侧
-    （`webui._policy_engine` → `PolicyEngine.base_dir`）解析出来的**完全
-    相同**：界面的「停手」是写 `user_data/<profile>/strategy_halt.json`，
-    采集器读同一份文件；两边各算一遍就会出现「界面说已停手、采集照跑」
-    （r1063 T6 Critical，本函数堵的是它往深一层的那条分支）。
-
-    口径本体只有一份：`core.yield_stats.user_data_root()`
-    （config 显式值 > `TM_USER_DATA_DIR` > `"user_data"`）。这里只做
-    「锚到仓库根」这一步（`_anchored` 与全仓同律），**不重新判断配置语义**
-    ——原来的写法自己判「有没有 `user_data_dir` 这个键」，于是出厂字面量
-    `user_data`（生产配置就是这么写的）被当成显式目录、绕过了环境变量层，
-    与界面的理解当场分叉。
-
-    迁移边界（`main()` 里的 `_new_ud`）刻意不跟着环境变量走：迁移是一次
-    性的目录搬迁动作，目标只认**配置值**；运行期读哪个目录才是本函数说了算。
-    """
-    from core.yield_stats import user_data_root
-    return _anchored(user_data_root(crawler_cfg), "user_data")
 
 
 def _fail_evidence(paths):
@@ -2033,9 +2018,11 @@ def make_sweep_job(cfg, rt, logger, storage, charts_fn):
             return
         drop_min = float(((u.get("notifier") or {}).get(
             "push_drop_min", 30)) or 30)
+        require_final = require_final_for_alerts(rt.get("cfg") or cfg)
 
         def _pushed(k):
-            return storage.get_alert_state("special|" + k)
+            return storage.get_alert_state(
+                alert_state_key("special|" + k, require_final))
 
         # 核实未过负缓存（Soldier P2#2）：drop/retry 不落 pushed 态，
         # 坏候选会每轮重占 cap=3 预算饿死新候选——按日戳记
@@ -2061,15 +2048,17 @@ def make_sweep_job(cfg, rt, logger, storage, charts_fn):
         plats = set(u.get("platforms") or []) - {"qunar"}
         crawlers = get_crawlers(plats) if plats else []
         verified = []
+        reminders = []
         for d in cands:
             prices = []
             for c in crawlers:
                 with channel_slot(c.name):
                     rows = c.safe_fetch(d.from_code, d.to_code,
                                         [d.date]) or []
-                prices += [p.price for p in rows if p.price]
+                prices += [p for p in rows if p.price]
+            source_prices = [p.price for p in prices]
             action, val = verify_verdict(
-                min(prices) if prices else None, d.src_price,
+                min(source_prices) if source_prices else None, d.src_price,
                 watch.max_price)
             if action != "push":
                 storage.set_alert_state("specialfail|" + special_key(d),
@@ -2078,9 +2067,20 @@ def make_sweep_job(cfg, rt, logger, storage, charts_fn):
                             "当日冷却次日重试",
                             d.from_code, d.to_code, d.date, val, d.src_price)
                 continue
-            if not should_push(val, _pushed(special_key(d)), drop_min):
-                continue
             verified.append((d, val))
+            eligible = []
+            for price in prices:
+                record = flight_reminder_record(price, require_final)
+                if record is not None:
+                    eligible.append((reminder_price(record, require_final), record))
+            if not eligible:
+                logger.info("[特价] %s→%s %s 最终费用未确认，保留报价、不提醒",
+                            d.from_code, d.to_code, d.date)
+                continue
+            amount, record = min(eligible, key=lambda item: item[0])
+            if amount <= watch.max_price and should_push(
+                    amount, _pushed(special_key(d)), drop_min):
+                reminders.append((d, amount, record))
         if not verified:
             return
         # 核实留痕（r320）：控制台概览「特价雷达」卡数据源——核实通过
@@ -2092,11 +2092,19 @@ def make_sweep_job(cfg, rt, logger, storage, charts_fn):
                                           d.ret_date, d.ret_price)
             except Exception as e:
                 logger.warning("[特价] 留痕失败: %s", e)
+        if not reminders:
+            return
         alerters_now = rt["alerters"] or []
         if ui >= len(alerters_now):
             return
         a = alerters_now[ui]
-        title, desp = build_special_push(watch, verified)
+        title, desp = build_special_push(
+            watch, [(deal, amount) for deal, amount, _record in reminders])
+        desp += "\n\n" + "\n".join(
+            "- %s→%s %s：%s" % (
+                deal.from_code, deal.to_code, deal.date,
+                notification_price_note(record, require_final))
+            for deal, _amount, record in reminders)
         try:
             quiet = a._in_quiet()
         except Exception:
@@ -2105,15 +2113,18 @@ def make_sweep_job(cfg, rt, logger, storage, charts_fn):
             # 免打扰不推送也不记已推——下轮自然重推（去抖状态未落）
             logger.info("[特价] 免打扰时段，%d 条顺延下轮", len(verified))
             return
-        if a.notifier:
-            # 消毒单源出口（八§1）：特价文案拼渠道自由词面
-            # （discount/airline），与 alerter 全部 send 同守卫不留绕行口
-            a.notifier.send(sanitize_desp(title), sanitize_desp(desp))
-        for d, val in verified:
-            storage.set_alert_state("special|" + special_key(d), float(val))
-        logger.info("[特价] 已推送 %d 条：%s", len(verified), "；".join(
+        if not a.notifier:
+            return
+        # 只有通知实际被接受，才记录已经推送的最终口径金额。
+        if a.notifier.send(sanitize_desp(title), sanitize_desp(desp)) is False:
+            logger.warning("[特价] 通知未被接受，未记录已推送状态")
+            return
+        for d, val, _record in reminders:
+            storage.set_alert_state(
+                alert_state_key("special|" + special_key(d), require_final), float(val))
+        logger.info("[特价] 已推送 %d 条：%s", len(reminders), "；".join(
             f"{d.from_code}→{d.to_code} {d.date} ￥{val:.0f}({d.src})"
-            for d, val in verified))
+            for d, val, _record in reminders))
 
     def _specials_round():
         """扫描轮尾跑特价监控：轮次节流（每 N 轮）+配置保存即触发
@@ -2144,34 +2155,89 @@ def make_sweep_job(cfg, rt, logger, storage, charts_fn):
     crawler_cache = {}
     from threading import RLock
     crawler_cache_lock = RLock()
-    session_root = _session_user_data((cfg.get("crawler") or {}))
-    # 注进采集器的就是这一份绝对路径：界面侧（`webui._policy_engine`）解析
-    # 出同一个目录才有意义——否则停手文件写在一个没人在读的地方
-    # （r1063 T10；口径本体在 `_session_user_data()`，不许在这里另算一遍）
+    query_sessions = resolve_query_sessions(cfg.get("crawler") or {})
+    rt["query_sessions"] = query_sessions
+    session_root = query_sessions["monitor"]["user_data_dir"]
+    # 会话角色与目录启动时固定，采集、策略和控制台共用解析结果。
     # 热改无头模式后清缓存，下轮按新配置重建浏览器实例
-    def clear_crawlers(platform=None):
+    def clear_crawlers(platform=None, role=None):
         with crawler_cache_lock:
             for key in list(crawler_cache):
-                if platform is None or platform in key:
+                if (role is None or role == key[0]) and (
+                        platform is None or platform in key[1]):
                     del crawler_cache[key]
     rt["clear_crawlers"] = clear_crawlers
 
-    def get_crawlers(platforms):
-        key = tuple(sorted(set(platforms)))
+    def refresh_crawler_pacing(new_cfg):
+        from crawlers.base import pacing_cfg_for
+        refreshed = 0
+        with crawler_cache_lock:
+            for cache_key, instances in crawler_cache.items():
+                scoped = crawler_for_session(
+                    new_cfg.get("crawler") or {}, query_sessions, cache_key[0])
+                scoped["android"] = new_cfg.get("android") or {}
+                pacing_config = pacing_cfg_for(scoped)
+                for instance in instances:
+                    pacing = getattr(instance, "_pacing", None)
+                    if pacing is not None:
+                        pacing.refresh(pacing_config)
+                        refreshed += 1
+        return refreshed
+
+    rt["refresh_crawler_pacing"] = refresh_crawler_pacing
+
+    def _record_session_rejection(platform, role, error,
+                                  action="query_session_unsupported"):
+        import sqlite3
+
+        reason = str(error)
+        logger.warning("[会话] %s/%s 已拒绝：%s", role, platform, reason)
+        rejection = {
+            "kind": "unsupported", "status": error.status,
+            "session_role": role, "reason": reason,
+            "at": time.strftime("%H:%M:%S"), "ok": False,
+            "rows": 0, "note": reason,
+        }
+        if role == "monitor":
+            if action == "verify":
+                rt["scene"].setdefault(platform, {})["verify"] = rejection
+            else:
+                rt["scene"][platform] = rejection
+        try:
+            storage.save_intervention(
+                platform, action, ok=False,
+                scope=role, note=reason)
+        except (OSError, sqlite3.Error) as write_error:
+            rejection["diagnostic_error"] = str(write_error)
+            logger.error("[会话] %s/%s 拒绝记录写入失败：%s",
+                         role, platform, write_error, exc_info=True)
+        return rejection
+
+    def get_crawlers(platforms, role="monitor"):
+        key = (role, tuple(sorted(set(platforms))))
         with crawler_cache_lock:
             if key not in crawler_cache:
                 _full = rt.get("cfg") or cfg
-                crawler_cfg = dict(_full.get("crawler", {}))
-                crawler_cfg["user_data_dir"] = session_root
+                crawler_cfg = crawler_for_session(
+                    _full.get("crawler") or {}, query_sessions, role)
                 # App 渠道读的是顶层 android: 段（不属于 crawler），
                 # 且要能区分「没配」与「配了但关闭」——所以整段落进去，
                 # 由 core.android.config.normalize 判 enabled。
                 crawler_cfg["android"] = _full.get("android") or {}
                 insts = []
-                for name in key:
+                rejected = []
+                for name in key[1]:
+                    try:
+                        ensure_session_supported(name, crawler_cfg)
+                    except AnonymousSessionUnsupportedError as error:
+                        _record_session_rejection(name, role, error)
+                        rejected.append(str(error))
+                        continue
                     cls = REGISTRY.get(name)
                     if cls:
                         insts.append(cls(crawler_cfg, logger))
+                if rejected and not insts:
+                    raise AnonymousSessionUnsupportedError("；".join(rejected))
                 crawler_cache[key] = insts
             return crawler_cache[key]
 
@@ -2273,6 +2339,9 @@ def make_sweep_job(cfg, rt, logger, storage, charts_fn):
             return {"n": 0, "rows": 0}
         try:
             insts = get_crawlers([platform])
+        except AnonymousSessionUnsupportedError as e:
+            return {"ok": False, "status": e.status, "rows": 0,
+                    "err": str(e), "session_role": "monitor"}
         except Exception as e:
             return {"n": 0, "rows": 0, "err": str(e)[:80]}
         if not insts:
@@ -2346,6 +2415,14 @@ def make_sweep_job(cfg, rt, logger, storage, charts_fn):
         **再弹一个窗**——人刚做完验证，屏幕上又冒出一个同样的页面，
         而且第二次的 done 事件无人触发，窗口只能靠 900s 超时收场。
         """
+        if query_sessions["monitor"]["anonymous_query"]:
+            error = AnonymousSessionUnsupportedError(
+                "匿名监控不保存验证会话，不能打开持久验证窗口；"
+                "需要登录时请使用「渠道登录」或显式账号核验")
+            _record_session_rejection(platform, "monitor", error, action="verify")
+            return {"ok": False, "status": error.status,
+                    "platform": platform, "session_role": "monitor",
+                    "rows": 0, "err": str(error)}
         _ving = rt.setdefault("verify_open", {})
         # 原子性（r481）：判断与置位必须在同一把锁内。分两步做时，两个
         # 标签页同时点会让双方都通过判断——负控实测：在两者之间插入一个
@@ -2360,10 +2437,7 @@ def make_sweep_job(cfg, rt, logger, storage, charts_fn):
         # 否则该渠道再也打不开验证窗口。
         _resolved = False
         try:
-            try:
-                insts = get_crawlers([platform])
-            except Exception:
-                insts = []
+            insts = get_crawlers([platform])
             if not insts:
                 return {"ok": False, "err": "未知渠道: %s" % platform}
             c = insts[0]
@@ -2374,6 +2448,7 @@ def make_sweep_job(cfg, rt, logger, storage, charts_fn):
                 return {"ok": False, "err": "无法确定要打开的地址"}
             _resolved = True
         except Exception as e:
+            logger.warning("[验证] %s 起窗预检失败：%s", platform, e)
             return {"ok": False, "err": str(e)[:120]}
         finally:
             if not _resolved:
@@ -2514,7 +2589,7 @@ def make_sweep_job(cfg, rt, logger, storage, charts_fn):
     _probe_lock = threading.Lock()
     _probing = set()
 
-    def probe_channel(platform, timeout_s=90, scope=""):
+    def probe_channel(platform, timeout_s=90, scope="", role="monitor"):
         """渠道自检（可干预）：跑完整链路（预热 + 一条真实查询），
         回报「到底能不能出数」以及出在哪条路上。
 
@@ -2524,19 +2599,28 @@ def make_sweep_job(cfg, rt, logger, storage, charts_fn):
         查询取该 scope 第一条航线的第一个日期——自检验的是链路，不是价格。
         """
         from datetime import datetime as _dtm
+
+        def failed(reason, status="error"):
+            logger.warning("[自检] %s/%s 未完成：%s", role, platform, reason)
+            return {"ok": False, "platform": platform, "session_role": role,
+                    "status": status, "rows": 0, "err": reason}
+
         _want = str(scope or "").strip().lower()
         if _want not in ("", "dom", "intl"):
-            return {"ok": False, "err": "scope 必须是 dom/intl/空"}
+            return failed("scope 必须是 dom/intl/空")
         try:
-            insts = get_crawlers([platform])
+            insts = get_crawlers([platform], role=role)
+        except AnonymousSessionUnsupportedError as e:
+            return failed(str(e), e.status)
         except Exception as e:
-            return {"ok": False, "err": str(e)[:120]}
+            return failed(str(e)[:120])
         if not insts:
-            return {"ok": False, "err": "未知渠道: %s" % platform}
+            return failed("未知渠道: %s" % platform)
         c = insts[0]
+        monitor_pacing = rt.get("pacing") if role == "monitor" else None
         with _probe_lock:
             if platform in _probing:
-                return {"ok": False, "err": "该渠道正在自检中，稍后再试"}
+                return failed("该渠道正在自检中，稍后再试", "busy")
             _probing.add(platform)
         t0 = time.time()
         try:
@@ -2567,53 +2651,56 @@ def make_sweep_job(cfg, rt, logger, storage, charts_fn):
                 if q:
                     break
             if not q and _want:
-                return {"ok": False,
-                        "err": "当前配置没有%s航线，无法按该范围自检"
-                               % ("国际" if _want == "intl" else "国内")}
+                return failed("当前配置没有%s航线，无法按该范围自检"
+                              % ("国际" if _want == "intl" else "国内"))
             if not q:
                 q = ("SHA", "NRT", _dtm.now().strftime("%Y-%m-%d"))
             warm = None
             if str(getattr(c, "warmup_url", "") or "").strip():
                 with channel_slot(c.name):
                     warm = c.warmup()
-                if rt.get("pacing") is not None:
-                    rt["pacing"].record(platform)
+                if monitor_pacing is not None:
+                    monitor_pacing.record(platform)
             with channel_slot(c.name):
                 prices = c.safe_fetch(q[0], q[1], [q[2]])
-                if rt.get("pacing") is not None:
-                    rt["pacing"].record(platform)
+                if monitor_pacing is not None:
+                    monitor_pacing.record(platform)
             _raw_paths = [dict(x) for x in (getattr(c, "paths", None) or [])]
             # 自检出数 = 链路已通：清熔断 + 刷新 TTL，否则会出现
             # "自检显示 ✓N 条，下一轮仍显示冷却/劣化" 的自相矛盾。
-            if prices and rt.get("pacing") is not None:
+            if prices and monitor_pacing is not None:
                 try:
-                    rt["pacing"].reset(platform)
-                    rt["pacing"].note_fetch(
+                    monitor_pacing.reset(platform)
+                    monitor_pacing.note_fetch(
                         platform, (q[0], q[1], q[2]),
                         min(p.price for p in prices), True)
-                except (AttributeError, TypeError, ValueError):
-                    pass
-            # 自检也写路径账（evidence_level=probe）：否则"刚验证通过"无法
-            # 覆盖 24h 里的旧劣化，下一次刷新仍判路径劣化。
-            _attempt = "probe-%s-%d" % (platform, int(time.time() * 1000))
-            for _rec in _raw_paths:
-                try:
-                    storage.save_fetch_path(
-                        platform, q[0], q[1], q[2],
-                        _rec.get("path", ""), _rec.get("status", ""),
-                        rows=_rec.get("rows", 0),
-                        note=_rec.get("detail", ""),
-                        evidence_level="probe", attempt_id=_attempt,
-                        request_url=str(_rec.get("url") or ""),
-                        http_status=int(_rec.get("http") or 0),
-                        ms=int(_rec.get("ms") or 0))
-                except Exception:
-                    pass
+                except (AttributeError, TypeError, ValueError) as e:
+                    logger.warning("[自检] %s 监控节流状态更新失败：%s", platform, e)
+            # 账号查询的节流与路径账由 crawler 自己的角色配置处理，
+            # 账号可用不能作为匿名通路恢复的证据。
+            if role == "monitor":
+                _attempt = "probe-%s-%d" % (platform, int(time.time() * 1000))
+                for _rec in _raw_paths:
+                    try:
+                        storage.save_fetch_path(
+                            platform, q[0], q[1], q[2],
+                            _rec.get("path", ""), _rec.get("status", ""),
+                            rows=_rec.get("rows", 0),
+                            note=_rec.get("detail", ""),
+                            evidence_level="probe", attempt_id=_attempt,
+                            request_url=str(_rec.get("url") or ""),
+                            http_status=int(_rec.get("http") or 0),
+                            ms=int(_rec.get("ms") or 0))
+                    except Exception as e:
+                        logger.warning("[自检] %s 监控路径账写入失败：%s", platform, e)
             paths = [{"path": p.get("path"), "status": p.get("status"),
                       "rows": p.get("rows"),
                       "detail": str(p.get("detail") or "")[:80]}
                      for p in _raw_paths]
-            out = {"ok": True, "platform": platform, "query": list(q),
+            out = {"ok": bool(prices), "platform": platform, "query": list(q),
+                   "status": "ok" if prices else "unconfirmed",
+                   "session_role": role,
+                   "anonymous_query": query_sessions[role]["anonymous_query"],
                    "scope": (_want or ("intl" if is_intl_route(q[0], q[1])
                                        else "dom")),
                    "rows": len(prices), "paths": paths,
@@ -2626,21 +2713,22 @@ def make_sweep_job(cfg, rt, logger, storage, charts_fn):
                    "ms": int((time.time() - t0) * 1000)}
             try:
                 storage.save_intervention(
-                    platform, "probe", ok=bool(prices), rows=len(prices),
+                    platform, "probe" if role == "monitor" else "account_probe",
+                    ok=bool(prices), rows=len(prices),
                     scope=str(out["scope"]), after=out["scope"],
                     note="/".join("%s %s×%s" % (
                         x.get("path"), x.get("status"), x.get("rows"))
                         for x in paths)[:300],
                     ms=out["ms"])
-            except Exception:
-                pass
-            logger.info("[自检] %s/%s → %d 条（%s，%.1fs）", platform,
+            except Exception as e:
+                logger.warning("[自检] %s/%s 干预账写入失败：%s", role, platform, e)
+            logger.info("[自检] %s/%s/%s → %d 条（%s，%.1fs）", role, platform,
                         out["scope"], out["rows"],
                         "/".join(str(p["status"]) for p in paths) or "无路径",
                         out["ms"] / 1000.0)
             return out
         except Exception as e:
-            return {"ok": False, "err": str(e)[:160]}
+            return failed(str(e)[:160])
         finally:
             with _probe_lock:
                 _probing.discard(platform)
@@ -4202,8 +4290,7 @@ def main():
     # 自动搬迁，日志/内核目录不搬（切换后新位置生效，旧档保留）。
     _new_db = _anchored(out.get("db_path", "data/prices.db"),
                         "data/prices.db")
-    # 迁移目标只认**配置值**（不跟 `TM_USER_DATA_DIR` 走，见 `_session_user_data`
-    # 的边界说明）：搬迁是一次性动作，而运行期读哪个目录由唯一口径决定。
+    # 迁移目标按配置确定；实际查询目录由共享会话解析结果确定。
     _new_ud = _anchored(str((cfg.get("crawler") or {}).get(
         "user_data_dir", "user_data") or "user_data"), "user_data")
     _new_log = _anchored(out.get("log_path", "logs/monitor.log"),
@@ -4297,6 +4384,7 @@ def main():
                             u["name"], type(urgent).__name__)
             alerters.append(Alerter(
                 logger, notifier=notifier, storage=storage,
+                require_final_prices=require_final_for_alerts(cfg),
                 push_drop_min=float((ncfg or {}).get("push_drop_min", 30)),
                 push_rise_min=float((ncfg or {}).get("push_rise_min", 50)),
                 digest=bool((ncfg or {}).get("digest", False)),
@@ -4412,23 +4500,8 @@ def main():
         # 静默窗/调度周期不在本实例可达范围——那两条由上面的
         # `rt["pacing"].refresh(cfg)` 与调度器承接，热生效的也是那两份。
         try:
-            from crawlers.base import pacing_cfg_for
-            _ccfg = dict((cfg.get("crawler") or {}))
-            _ccfg["user_data_dir"] = session_root
-            _ccfg["android"] = cfg.get("android") or {}
-            _hot_pcf = pacing_cfg_for(_ccfg)
-            _n_priv = 0
-            with crawler_cache_lock:
-                for _insts in crawler_cache.values():
-                    for _inst in _insts:
-                        _priv = getattr(_inst, "_pacing", None)
-                        if _priv is None:
-                            continue
-                        _priv.refresh(_hot_pcf)
-                        _n_priv += 1
-            if _n_priv:
-                logger.info("[热重载] 采集器私有节流实例已刷新 %d 份"
-                            "（速率/熔断/错峰/并发当场生效）", _n_priv)
+            _n_priv = rt['refresh_crawler_pacing'](cfg)
+            logger.info('[热重载] 已刷新 %d 个采集器节流配置', _n_priv)
         except Exception as e:
             logger.warning("[热重载] 采集器私有节流实例刷新失败: %s", e)
         # 调度周期热更新：interval 变化时重排调度器（无需重启）
@@ -4573,7 +4646,9 @@ def main():
                       users=rt["users"],
                       alerters=rt["alerters"],
                       reload_cb=reload_config, config_path=str(cfg_path),
-                      version=__version__, login_saved_cb=rt["clear_crawlers"])
+                      version=__version__,
+                      login_saved_cb=lambda p: rt["clear_crawlers"](p, role="account"),
+                      query_sessions=rt["query_sessions"])
             try:
                 from webui import _State as _WS
                 # 运行时容器挂接（r1063 T10）：「中断本轮」改的是 `rt` 上的

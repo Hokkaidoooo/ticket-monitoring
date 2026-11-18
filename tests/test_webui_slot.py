@@ -37,17 +37,18 @@ def test_source_has_persistence_hooks():
     assert "slot_verify.json" in WEBUI, "没有落盘文件名"
     assert "def _slot_verify_load(" in WEBUI, "缺少 _slot_verify_load"
     assert "def _slot_verify_save(" in WEBUI, "缺少 _slot_verify_save"
-    assert "_SLOT_VERIFY.update(_slot_verify_load())" in WEBUI, (
-        "启动时没有把上次核验结论读回来")
+    assert "_SLOT_VERIFY.update(previous_verification)" in WEBUI
     assert "_slot_verify_save()" in WEBUI, "核验后没有落盘"
 
 
 def test_round_trip_through_disk(tmp_path, monkeypatch):
-    """行为断言：save → load 必须原样读回；坏文件/缺文件必须静默降级为空。"""
+    """核验结果写入固定账号目录；坏文件必须暴露错误。"""
     import webui
+    from core.query_sessions import resolve_query_sessions
 
     target = tmp_path / "slot_verify.json"
-    monkeypatch.setattr(webui, "_SLOT_VERIFY_PATH", str(target), raising=False)
+    roles = resolve_query_sessions({"user_data_dir": str(tmp_path)})
+    monkeypatch.setattr(webui._State, "query_sessions", roles)
 
     assert webui._slot_verify_load() == {}, "文件不存在时必须返回空，不能抛"
 
@@ -61,7 +62,8 @@ def test_round_trip_through_disk(tmp_path, monkeypatch):
     assert webui._slot_verify_load() == payload, "读回内容必须与写入一致（重启不丢）"
 
     target.write_text("{bad json", encoding="utf-8")
-    assert webui._slot_verify_load() == {}, "坏文件必须静默降级为空，不能抛异常"
+    with pytest.raises(ValueError, match="账号核验记录读取失败"):
+        webui._slot_verify_load()
 
 
 # ---- merged from tests/test_r508_slot_tone_matches_text.py ----

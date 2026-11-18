@@ -16,6 +16,7 @@ from contextlib import nullcontext
 from typing import List
 
 from core.models import FlightPrice, price_band_ok
+from core.pricequote import money_decimal, quote_from_record, quote_sort_key
 from core.citydata import CODE_NAME as _CODE_NAME
 from core.flightnorm import AIRPORT_NAME_CN
 from core.intl import (INTL_CITY_NAME, airport_city_code, is_intl_route,
@@ -994,8 +995,9 @@ class CtripCrawler(WeekCalendarMixin, BaseCrawler):
         """PC 国际列表 batchSearch/pull → (统一航班行, needUserLogin)。
 
         行程顶层 flightSegments[].flightList 为全部航段（直飞 1 段、
-        中转多段）。priceList 每项一个销售政策，含税总价=
-        adultPrice+adultTax；ticketCount 缺省=渠道未下发（实测 363/489
+        中转多段）。priceList 每项一个销售政策，adultTax 在场时
+        以 adultPrice+adultTax 确认含税报价，缺税时保留裸价和未知税额；
+        ticketCount 缺省=渠道未下发（实测 363/489
         行缺省且页面照常展示），不是无票，显式<=0 才剔除。价格取
         目标日起飞、价带内最低政策；舱位看 priceUnitList.cabinClass
         （S=超级经济，itineraryCabin=Y-@S 是混合舱不能直接当 S）；
@@ -1036,17 +1038,28 @@ class CtripCrawler(WeekCalendarMixin, BaseCrawler):
                     except (TypeError, ValueError):
                         pass
                 try:
-                    total = (float(p.get("adultPrice") or 0)
-                             + float(p.get("adultTax") or 0))
-                except (TypeError, ValueError):
+                    bare = money_decimal(p.get("adultPrice"), "成人票价")
+                    raw_tax = p.get("adultTax")
+                    tax = (None if raw_tax is None
+                           else money_decimal(raw_tax, "成人税费"))
+                except ValueError as exc:
+                    _LOG.warning("[ctrip][intl] 销售政策金额无效：%s", exc)
                     continue
+                total = float(bare if tax is None else bare + tax)
                 if not price_band_ok(total, el={"intl": 1}):
                     continue
-                if best is None or total < best[0]:
-                    best = (total, p)
+                candidate = {
+                    "price": total, "barePrice": float(bare),
+                    "tax": None if tax is None else float(tax),
+                    "tax_included": tax is not None,
+                }
+                key = quote_sort_key(candidate)
+                if best is None or key < best[4]:
+                    best = (total, p, float(bare),
+                            None if tax is None else float(tax), key)
             if best is None:
                 continue
-            price, pol = best
+            price, pol, bare, tax, _ = best
             cabin_classes, seat_classes = [], []
             for u in pol.get("priceUnitList") or []:
                 for fs in (u or {}).get("flightSeatList") or []:
@@ -1200,13 +1213,12 @@ class CtripCrawler(WeekCalendarMixin, BaseCrawler):
                         left = int(q)
                 except (TypeError, ValueError):
                     left = None
-            tax = 0.0
-            try:
-                tax = float(pol.get("adultTax") or 0)
-            except (TypeError, ValueError):
-                tax = 0.0
             row = {
                 "price": price,
+                "barePrice": bare,
+                "tax": tax,
+                "tax_included": tax is not None,
+                "basis": "tax_included" if tax is not None else "bare",
                 "code": "/".join(fnos),
                 "name": fnos[0],
                 "depTime": dd[11:16],
@@ -1247,8 +1259,8 @@ class CtripCrawler(WeekCalendarMixin, BaseCrawler):
                 **({"cabinCode": cabin_code} if cabin_code else {}),
                 **({"baggage": bag} if bag else {}),
                 **({"leftTickets": left} if left is not None else {}),
-                **({"tax": tax} if tax > 0 else {}),
             }
+            row["quote"] = quote_from_record(row)
             out.append(row)
         return out, need_login
 
@@ -1373,7 +1385,8 @@ class CtripCrawler(WeekCalendarMixin, BaseCrawler):
         """国际日历捕获体 → 目标日元素行。departDate=/Date(毫秒+0800)/
         epoch 按报文自带 +0800 锚定还原（不用本地时区——UTC 运行环境
         解出前一日=目标日全等匹配漏空，CI 实锤）；price=0 无报价剔除；
-        transportPrice>0 落 tax（税费构成透传，消费端「含税」展示用）。"""
+        totalPrice 在场才确认含税；transportPrice 按原字段透传，
+        不将未确认语义的金额当作税费。"""
         import re
         from datetime import datetime, timedelta, timezone
         try:
@@ -1392,10 +1405,12 @@ class CtripCrawler(WeekCalendarMixin, BaseCrawler):
                 int(m.group(1)) / 1000, tz=_tz8).strftime("%Y-%m-%d")
             if day != date:
                 continue   # 只取目标日（不混窗）
-            total = row.get("totalPrice") or row.get("price") or 0
+            has_total = row.get("totalPrice") is not None
+            raw_price = row.get("totalPrice") if has_total else row.get("price")
             try:
-                total = float(total)
-            except (TypeError, ValueError):
+                total = float(money_decimal(raw_price, "日历报价"))
+            except ValueError as exc:
+                _LOG.warning("[ctrip][intl] 日历金额无效：%s", exc)
                 continue
             if not price_band_ok(total, el={"intl": 1}):
                 continue
@@ -1407,14 +1422,13 @@ class CtripCrawler(WeekCalendarMixin, BaseCrawler):
             # 国际面断供/覆盖不足，再评估以 flag 为锚的月最低价提取。
             el = {"price": total, "name": "日历最低价", "code": "",
                   "depDate": date,
+                  "tax": None,
+                  "tax_included": True if has_total else None,
+                  "basis": "tax_included" if has_total else "unknown",
+                  "transportPrice": row.get("transportPrice"),
                   # 结构化占位键（同飞猪/同程日历行律，R22）
                   "depTime": "", "arrTime": "", "intl": 1}
-            try:
-                tax = float(row.get("transportPrice") or 0)
-            except (TypeError, ValueError):
-                tax = 0.0
-            if tax > 0:
-                el["tax"] = tax
+            el["quote"] = quote_from_record(el)
             out.append(el)
         return out
 
@@ -2545,6 +2559,9 @@ class CtripCrawler(WeekCalendarMixin, BaseCrawler):
             out.append({
                 "price": price,
                 "code": code,
+                "basis": "tax_included",
+                "tax_included": True,
+                "price_source": "tprice",
                 "name": fnos[0],
                 "depTime": dd[11:16],
                 "arrTime": ad[11:16],

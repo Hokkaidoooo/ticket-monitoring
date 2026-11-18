@@ -341,3 +341,15 @@ build/
 .uitest.lock
 data/.heartbeat
 logs/watchdog.log
+
+# 本机运行环境和用户数据
+/.venv/
+/_internal/
+/browsers/
+/TicketMonitor.exe
+/config.yaml
+/data/
+/user_data/
+/anonymous_data/
+/logs/
+/.monitor.pid

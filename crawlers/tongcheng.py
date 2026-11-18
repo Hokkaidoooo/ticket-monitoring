@@ -7,6 +7,7 @@ H5 入口为 m.ly.com 机票预订页 book1，列表通过 XHR 异步加载。
 debug/tongcheng_xhr_<date>.txt，据此再精确化字段解析。
 """
 import os
+import logging
 import re
 import json
 import time
@@ -15,6 +16,7 @@ from datetime import datetime, timedelta
 from typing import List
 
 from core.models import PRICE_MAX, PRICE_MIN, FlightPrice
+from core.pricequote import money_decimal, quote_from_record
 from core.citydata import CODE_NAME as _CODE_NAME
 from core.intl import airport_city_code, city_short_of, is_intl_route
 from .base import BaseCrawler, iata2, iata3, profile_headers
@@ -294,7 +296,8 @@ class TongchengCrawler(BaseCrawler):
                              ret_date: str = ""):
         """ts/calendar JSON → (price, tax, transfer)。RD[] 按 DD==date
         取点（主源 TP 含税总价，与国内 atp 口径一致）；无 RD 命中回落
-        顶层 TP/LP（查询日同义交叉档）。0/缺价 None（宁缺勿错）。"""
+        顶层 TP/LP（查询日同义交叉档）。缺少P时税额保持None；
+        0/缺价 None。"""
         try:
             obj = json.loads(body or "")
         except Exception:
@@ -317,16 +320,22 @@ class TongchengCrawler(BaseCrawler):
         if not isinstance(pt, dict):
             return None
         try:
-            price = float(pt.get("TP"))
-        except (TypeError, ValueError):
+            price_amount = money_decimal(pt.get("TP"), "同程含税报价")
+        except ValueError:
             return None
+        price = float(price_amount)
         if price <= 0:
             return None
-        try:
-            bare = float(pt.get("P"))
-        except (TypeError, ValueError):
-            bare = price
-        tax = max(0.0, price - bare)
+        tax = None
+        if pt.get("P") is not None:
+            try:
+                bare = money_decimal(pt["P"], "同程不含税票价")
+                if bare > price_amount:
+                    raise ValueError("不含税票价高于含税报价")
+                tax = float(price_amount - bare)
+            except ValueError as exc:
+                logging.getLogger(__name__).warning(
+                    "[tongcheng][intl] 无法确认税费拆分：%s", exc)
         ext = pt.get("ext") if isinstance(pt.get("ext"), dict) else {}
         transfer = bool(ext.get("segments"))
         # 往返契约：ret_date 在场时第二返回值扩展为 (price, tax, transfer,
@@ -1106,7 +1115,9 @@ class TongchengCrawler(BaseCrawler):
                     "depTime": "",
                     "arrTime": "",
                     "intl": 1,
-                    **({"tax": tax} if tax > 0 else {}),
+                    "tax": tax,
+                    "tax_included": True,
+                    "basis": "tax_included",
                     "currency": "CNY",
                     "source": "ts_calendar",
                     "cityCodes": f"{fc}-{tc}",
@@ -1115,6 +1126,7 @@ class TongchengCrawler(BaseCrawler):
                     **({"backDate": back, "tripType": "RT"}
                        if back else {}),
                 }
+                element["quote"] = quote_from_record(element)
                 results.append(FlightPrice(
                     platform=self.name,
                     from_city=from_city, to_city=to_city,

@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import os
+import logging
 import base64
 import json
 import datetime as _dtm
@@ -39,6 +40,7 @@ from core import net as _net
 from core.flightnorm import cabin_clean, fmt_dur
 from core.intl import airport_city_code, is_intl_route
 from core.models import PRICE_MAX, PRICE_MIN, FlightPrice, price_band_ok
+from core.pricequote import money_decimal, quote_from_record
 from .base import (BaseCrawler, iata2, iata3, profile_headers,
                    scoped_id, cookies_or_empty)
 from .challenge import blocked_signal, login_signal
@@ -1244,11 +1246,26 @@ class TuniuCrawler(BaseCrawler):
             if not isinstance(it, dict):
                 continue
             try:
-                price = float(it.get("avgTotalPrice"))
-            except (TypeError, ValueError):
+                price = float(money_decimal(it.get("avgTotalPrice"), "途牛含税报价"))
+            except ValueError as exc:
+                logging.getLogger(__name__).warning(
+                    "[tuniu][intl] 报价无效：%s", exc)
                 continue
             if not price_band_ok(price, el={"intl": 1}):
                 continue
+            money_parts = {}
+            for source_key, target_key in (("avgTax", "tax"),
+                                            ("avgBasePrice", "barePrice")):
+                value = it.get(source_key)
+                if value is None:
+                    money_parts[target_key] = None
+                    continue
+                try:
+                    money_parts[target_key] = float(money_decimal(value, source_key))
+                except ValueError as exc:
+                    logging.getLogger(__name__).warning(
+                        "[tuniu][intl] 费用拆分无效：%s", exc)
+                    money_parts[target_key] = None
             d_tm, a_tm = str(it.get("dTime") or ""), str(it.get("aTime") or "")
             dep_d, arr_d = d_tm[:10], a_tm[:10]
             dep_t, arr_t = _hhmm(d_tm), _hhmm(a_tm)
@@ -1321,6 +1338,10 @@ class TuniuCrawler(BaseCrawler):
                 n_day = 0
             row = {
                 "price": price,
+                "basis": "tax_included",
+                "tax_included": True,
+                "price_source": "avgTotalPrice",
+                **money_parts,
                 "code": fnos.replace(",", "/"),
                 "name": (f"{str(it.get('airlineName') or '').split('|')[0]}"
                          f"{fnos.split(',')[0]}"),
@@ -1345,12 +1366,6 @@ class TuniuCrawler(BaseCrawler):
                                         or str(_flt.get("cabinType") or "").strip())) else {}),
                 **({"leftTickets": int(it["seat"])}
                    if isinstance(it.get("seat"), int) and 0 < it["seat"] < 9 else {}),
-                **({"tax": float(it["avgTax"])}
-                   if isinstance(it.get("avgTax"), (int, float))
-                   and float(it["avgTax"]) > 0 else {}),
-                **({"barePrice": float(it["avgBasePrice"])}
-                   if isinstance(it.get("avgBasePrice"), (int, float))
-                   and float(it["avgBasePrice"]) > 0 else {}),
                 # 机场全名/航站楼（无值不落键同族律）
                 **({"depAirport": _s} if (_s := str(it.get("dPortName") or "").strip()) else {}),
                 **({"arrAirport": _s} if (_s := str(it.get("aPortName") or "").strip()) else {}),
@@ -1391,6 +1406,7 @@ class TuniuCrawler(BaseCrawler):
                 _pm = str(_flt.get("planeModel") or "").strip()
                 if _pm:
                     row["plane"] = _pm
+            row["quote"] = quote_from_record(row)
             out.append(row)
         return out
 

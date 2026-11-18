@@ -78,11 +78,15 @@ def test_bare_lowest_is_labeled_not_unqualified(monkeypatch):
                             [unknown], sr._status("ok", "", 1)))
     out = sr.build_radar(_body(channels=["ctrip", "qunar"]), LOG)
     low = out["lowest"]
-    assert low["price"] == 450
-    assert low["lowest_basis"] == "unknown"
+    assert low["price"] == 500
+    assert low["lowest_basis"] == "bare"
     assert low["basis_mixed"] is True
-    assert "混合" in low["note"] and "口径未标注" in low["note"]
-    assert out["lowest_platform"] == "qunar"
+    assert low["cheaper_cross_basis"]["price"] == 450
+    assert low["cheaper_cross_basis"]["basis"] == "unknown"
+    assert "混合" in low["note"] and "裸价不含税" in low["note"]
+    assert low["quote"]["complete"] is False
+    assert low["quote"]["payable_total"] is None
+    assert out["lowest_platform"] == "ctrip"
     assert out["lowest_date"] == TOMORROW.isoformat()
 
 

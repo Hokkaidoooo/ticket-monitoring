@@ -470,21 +470,27 @@ class QunarCrawler(BaseCrawler):
                                  start_date: str, end_date: str,
                                  logger=None, timeout: float = 35.0,
                                  proxy: str = "",
-                                 profile_root: str = "user_data"):
-        """去哪儿官方 H5 低价日历（特价页官方深链，零登录）。
+                                 profile_root: str = "user_data",
+                                 anonymous_query: bool = False):
+        """去哪儿官方 H5 低价日历（特价页官方深链）。
 
         页面 JS 自行生成 bella/june 签名；本函数只加载官方页面并读取
         getFlightCalendar 的真实响应。
+        anonymous_query=True 使用内存上下文，不读取或保存账号资料；
+        False 使用已有账号资料的临时副本。
         成功返回响应 dict；观测到页面风控证据返回 None（调用方进入长
         冷却）；加载超时/浏览器不可用则抛 TimeoutError/RuntimeError，
         由调用方按失败如实上报，不冒充风控冷却。"""
+        from contextlib import contextmanager
         from urllib.parse import quote
+        from core.query_sessions import anonymous_query_enabled
         log = logger or _LOG
-        prof = tempfile.mkdtemp(prefix="qn_radar_")
-        # 使用已保存的去哪儿会话（仅复制 Cookie/Preferences/Local State，
+        anonymous_query = anonymous_query_enabled({"anonymous_query": anonymous_query})
+        prof = None if anonymous_query else tempfile.mkdtemp(prefix="qn_radar_")
+        # 账号角色使用已保存的会话（仅复制 Cookie/Preferences/Local State，
         # 不复制缓存与历史）；无会话时仍走官方页面匿名路径。
         src = os.path.join(profile_root, "qunar")
-        if os.path.isdir(src):
+        if not anonymous_query and os.path.isdir(src):
             for rel in ("Default/Network/Cookies", "Default/Preferences",
                         "Local State"):
                 sp = os.path.join(src, rel)
@@ -508,22 +514,53 @@ class QunarCrawler(BaseCrawler):
             from playwright.sync_api import sync_playwright
         except Exception as e:
             log.warning("[特价·qunar] Playwright 不可用: %s", e)
-            shutil.rmtree(prof, ignore_errors=True)
+            if prof is not None:
+                shutil.rmtree(prof, ignore_errors=True)
             raise RuntimeError("去哪儿低价页 Playwright 不可用: %s" % e)
+        context_options = {
+            "viewport": {"width": 390, "height": 844},
+            "user_agent": ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 "
+                           "like Mac OS X) AppleWebKit/605.1.15 "
+                           "(KHTML, like Gecko) Version/17.0 "
+                           "Mobile/15E148 Safari/604.1"),
+            "locale": "zh-CN", "timezone_id": "Asia/Shanghai",
+            "is_mobile": True, "has_touch": True,
+            "proxy": {"server": proxy} if proxy else None,
+        }
+
+        @contextmanager
+        def _calendar_context():
+            if anonymous_query:
+                # QunarCrawler 初始化会读航线轮转资料；这里只需要 Base 的内存上下文。
+                class _AnonymousCalendarBrowser(BaseCrawler):
+                    name = "qunar"
+                    profile_name = "qunar"
+                    use_mobile = True
+
+                crawler = _AnonymousCalendarBrowser({
+                    "anonymous_query": anonymous_query,
+                    "user_data_dir": profile_root,
+                    "headless": True, "stealth": False,
+                    "mobile_user_agent": context_options["user_agent"],
+                    "geo": {"locale": context_options["locale"],
+                            "timezone": context_options["timezone_id"]},
+                    "proxy": proxy,
+                }, log)
+                with crawler.browser() as ctx:
+                    yield ctx
+                return
+            with sync_playwright() as pw:
+                ctx = pw.chromium.launch_persistent_context(
+                    prof, headless=True, **context_options)
+                try:
+                    yield ctx
+                finally:
+                    ctx.close()
+
         obj = {}
         load_errors = []
         try:
-            with sync_playwright() as pw:
-                ctx = pw.chromium.launch_persistent_context(
-                    prof, headless=True,
-                    viewport={"width": 390, "height": 844},
-                    user_agent=("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 "
-                                "like Mac OS X) AppleWebKit/605.1.15 "
-                                "(KHTML, like Gecko) Version/17.0 "
-                                "Mobile/15E148 Safari/604.1"),
-                    locale="zh-CN", timezone_id="Asia/Shanghai",
-                    is_mobile=True, has_touch=True,
-                    proxy={"server": proxy} if proxy else None)
+            with _calendar_context() as ctx:
                 page = ctx.new_page()
 
                 def _on_resp(r):
@@ -578,16 +615,12 @@ class QunarCrawler(BaseCrawler):
                         break
                     # 10003 为页面侧通用风控失败，按页面正常重试一次
                     url += ("&_r=" + str(int(time.time())))
-                try:
-                    ctx.close()
-                except Exception:
-                    pass
         except Exception as e:
             log.warning("[特价·qunar] 低价页异常: %s", str(e)[:160])
-            shutil.rmtree(prof, ignore_errors=True)
             raise RuntimeError("去哪儿低价页加载失败: %s" % str(e)[:160])
         finally:
-            shutil.rmtree(prof, ignore_errors=True)
+            if prof is not None:
+                shutil.rmtree(prof, ignore_errors=True)
         if obj.get("data"):
             return obj["data"]
         if obj.get("risk"):

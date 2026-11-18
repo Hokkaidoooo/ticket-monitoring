@@ -22,6 +22,16 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from core.storage import PriceStorage
+from core.query_sessions import (
+    AnonymousSessionUnsupportedError, crawler_for_session,
+    ensure_session_supported, resolve_query_sessions,
+)
+from core.pricequote import build_quote, quote_from_record, quote_sort_key
+from core.delay_insurance import DelayInsuranceDataError, assess_delay_insurance
+from core.delay_weather import get_airports
+from core.final_alerts import (
+    alert_state_key, notification_price_note, reminder_price, require_final_for_alerts,
+)
 from core.pacing import PLATFORMS
 from core.login_slots import LOGIN_SLOTS, LOGIN_SLOT_ORDER, slot_crawler
 from crawlers.base import CHANNEL_GATE, platform_lock, channel_slot
@@ -64,17 +74,25 @@ def _ud_root(cfg=None):
     return _anchored(user_data_root(c.get("crawler")), "user_data")
 
 
-def _ud_root_runtime():
-    """**运行期**（采集器正在读的那个）根目录。
+def _query_session_roles():
+    if _State.query_sessions is None:
+        boot = _State.boot_cfg if _State.boot_cfg is not None else _State.cfg
+        if not isinstance(boot, dict):
+            raise RuntimeError("查询会话尚未初始化")
+        _State.query_sessions = resolve_query_sessions(boot.get("crawler") or {})
+    return _State.query_sessions
 
-    `user_data_dir` 是启动级设置：`main.py` 的 `session_root` 在启动时就固定
-    并注进每条爬虫，热改要重启才生效（`_effective_crawler_config()` 同理只认
-    `boot_cfg`）。所以「按实际资料目录去查文件」的地方（App 登录快照、登录卡
-    `saved` 判定）必须读 `boot_cfg`，否则热改后界面去看新目录、采集器还在旧
-    目录，又是一次方向相反的分叉。
-    """
-    boot = _State.boot_cfg if _State.boot_cfg is not None else (_State.cfg or {})
-    return _ud_root(boot if isinstance(boot, dict) else None)
+
+def _ud_root_runtime(role="monitor"):
+    """返回启动时固定的角色目录；修改会话目录需重启。"""
+    roles = _query_session_roles()
+    if role not in ("monitor", "account"):
+        raise ValueError("未知会话角色：" + str(role))
+    return roles[role]["user_data_dir"]
+
+
+def _background_account_verification():
+    return _query_session_roles()["verify_account_in_background"]
 
 
 # `user_data` 目录在配置里的键名（`core.yield_stats.user_data_root()` 的入参键）。
@@ -919,7 +937,9 @@ def _runtime_view(demo: bool = False) -> dict:
             "started_at": str(getattr(_State, "started_at", "") or ""),
             "tz": time.strftime("%Z") or "",
             "argv": list(sys.argv),
-            "demo": bool(demo)}
+            "demo": bool(demo),
+            "query_sessions": _query_session_roles(),
+            "background_account_verification": _background_account_verification()}
 
 
 def _restart_view(file_cfg: dict) -> dict:
@@ -975,6 +995,7 @@ def _load_asset(name: str) -> str:
 
 
 PAGE = _load_asset("page.html")
+DELAY_INSURANCE_JS = _load_asset("delay_insurance.js").encode("utf-8")
 
 
 NOTIFY_PAGE = _load_asset("notify.html")
@@ -1240,6 +1261,7 @@ def _trend_payload(q: dict) -> dict:
 
 class _State:
     cfg = None
+    query_sessions = None
     boot_cfg = None   # 进程启动快照（重启差量基准，热重载不覆盖）
     users = None
     alerters = []     # 与 users 对齐；雷达降价提醒复用用户通知通道
@@ -2259,7 +2281,7 @@ def _app_login_ctx():
             # 采集器写在 env 目录里的快照，卡片一直显示「未保存会话」，
             # 与事实相反——这是「界面说没有、其实有」的方向（T6 Critical
             # 的镜像形态，r1063 T10 复核）。
-            udir = _ud_root_runtime()
+            udir = _ud_root_runtime("account")
             p = os.path.join(udir, "android_snapshots",
                              (plat or "app_zhixing") + ".tar.gz")
             if not (os.path.isfile(p) and os.path.getsize(p) > 0):
@@ -2292,7 +2314,7 @@ def _app_login_ctx():
             # 目录用 `_ud_root_runtime()`（唯一口径 + 启动级）：导出的快照
             # 必须落在采集器会去恢复的那个目录，否则「登录一次永久复用」
             # 从导出那一刻就失效；相对路径直接 join 还会随 cwd 漂移。
-            udir = _ud_root_runtime()
+            udir = _ud_root_runtime("account")
             store = SnapshotStore(os.path.join(udir, "android_snapshots"))
             mgr = SnapshotManager(dev, store, pkg)
             return mgr.export(plat)
@@ -2423,49 +2445,48 @@ def _slot_state7(status, service_closed: bool = False):
 # 登录槽位核验（独立端会话）：只记录真实页面分类结果，未核验不猜。
 # r1156：结论必须落盘——只在内存时，重启一次「已核验」就退回「已存待验」，
 # 用户读到的正是「我登录了，你页面没变」。
-_SLOT_VERIFY_PATH = os.path.join("user_data", "slot_verify.json")
 _SLOT_VERIFY = {}
 _SLOT_VERIFY_LOCK = threading.Lock()
 _SLOT_VERIFY_THREAD = None
 
 
 def _slot_verify_load() -> dict:
-    """读回上次的核验结论；文件缺失/损坏一律降级为空，绝不抛异常。"""
+    """只读取当前账号目录的核验结论，损坏记录显式报错。"""
+    path = os.path.join(_ud_root_runtime("account"), "slot_verify.json")
     try:
-        with open(_SLOT_VERIFY_PATH, encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
-    except Exception:
+    except FileNotFoundError:
         return {}
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("账号核验记录读取失败：" + str(exc)) from exc
+    if not isinstance(data, dict):
+        raise ValueError("账号核验记录必须是对象")
     out = {}
-    for k, v in (data or {}).items():
-        if isinstance(v, dict):
-            out[str(k)] = dict(v)
+    for k, v in data.items():
+        if not isinstance(v, dict):
+            raise ValueError("账号核验结果必须是对象：" + str(k))
+        out[str(k)] = dict(v)
     return out
 
 
 def _slot_verify_save() -> None:
-    """原子落盘（先写 .tmp 再 replace）；失败只告警，不打断核验本身。"""
+    """核验结论原子写入固定账号目录；写入失败保留错误。"""
+    path = os.path.join(_ud_root_runtime("account"), "slot_verify.json")
     try:
-        d = os.path.dirname(_SLOT_VERIFY_PATH)
-        if d:
-            os.makedirs(d, exist_ok=True)
-        tmp = _SLOT_VERIFY_PATH + ".tmp"
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
         with _SLOT_VERIFY_LOCK:
             payload = {k: dict(v) for k, v in _SLOT_VERIFY.items()}
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=0)
-        os.replace(tmp, _SLOT_VERIFY_PATH)
-    except Exception:
-        try:
-            _State.logger.warning("[登录] 槽位核验结果落盘失败", exc_info=True)
-        except Exception:
-            pass
+        os.replace(tmp, path)
+    except OSError:
+        _State.logger.error("[登录] 槽位核验结果落盘失败", exc_info=True)
+        raise
 
 
-_SLOT_VERIFY.update(_slot_verify_load())
-
-
-def _effective_crawler_config() -> dict:
+def _effective_crawler_config(role="monitor") -> dict:
     """Session storage is a startup setting; other crawler options stay live.
 
     r1063 T275：这句"stay live"此前是**空头承诺**——本函数读 `_State.cfg`
@@ -2478,8 +2499,7 @@ def _effective_crawler_config() -> dict:
     # 资料目录属于启动级设置：生效值是**运行期**那一份（唯一口径，见
     # `_ud_root_runtime()`）。原来自己 `_anchored(boot... or "user_data")` 算
     # 一遍，装了 `TM_USER_DATA_DIR` 就与采集器实际读的目录分叉（r1063 T10）。
-    current["user_data_dir"] = _ud_root_runtime()
-    return current
+    return crawler_for_session(current, _query_session_roles(), role)
 
 
 # 账本拦截的两种性质：滑块/验证码要人工过验证，登录门要重登。两件事都
@@ -2644,7 +2664,7 @@ def _login_state_view() -> dict:
     import os as _os
     import time as _t
     from crawlers import REGISTRY
-    cfg = _effective_crawler_config()
+    cfg = _effective_crawler_config("account")
     root = cfg["user_data_dir"]
     try:
         # 认证快照要的是「已接收的拒绝证据」，默认仍走 _health_state——
@@ -2668,6 +2688,10 @@ def _login_state_view() -> dict:
     except Exception:
         evidence = {}
     path_rows = _recent_path_rows(24)
+    if _query_session_roles()["monitor_anonymous"]:
+        # 匿名遇登录墙不能证明已保存的账号失效。
+        evidence = {}
+        path_rows = {}
 
     def event_time(value):
         try:
@@ -3035,7 +3059,7 @@ def _start_login(plat: str, slot: str = "", url: str = "",
         _State.logger.info("[登录] %s 已请求叫停本轮为登录让路", key)
     except Exception:
         pass
-    cfg = _effective_crawler_config()
+    cfg = _effective_crawler_config("account")
     logger = _State.logger
 
     def _run():
@@ -3153,7 +3177,8 @@ def _start_login(plat: str, slot: str = "", url: str = "",
                 _kick_login_probe(str(meta.get("plat") or plat))
             except Exception:
                 pass
-            if str(key or "").endswith("_h5"):
+            if (_background_account_verification()
+                    and str(key or "").endswith("_h5")):
                 threading.Thread(target=_verify_login_slot,
                                  args=(key,), daemon=True,
                                  name="slot-verify").start()
@@ -3252,8 +3277,7 @@ def _profile_session_file(plat: str, slot: str = "") -> str:
     for n in names:
         if not n:
             continue
-        p = os.path.join(str((_State.cfg or {}).get("crawler", {}).get(
-            "user_data_dir", "user_data")), n, "session-state.json")
+        p = os.path.join(_ud_root_runtime("account"), n, "session-state.json")
         if os.path.isfile(p):
             return p
     return ""
@@ -3305,7 +3329,8 @@ def _finish_login(plat: str, slot: str = "") -> dict:
             except Exception:
                 pass
             verifying = False
-            if str(key or "").endswith("_h5"):
+            if (_background_account_verification()
+                    and str(key or "").endswith("_h5")):
                 try:
                     threading.Thread(target=_verify_login_slot, args=(key,),
                                      daemon=True,
@@ -3319,7 +3344,9 @@ def _finish_login(plat: str, slot: str = "") -> dict:
             return {"ok": False,
                     "err": ("该槽位没有进行中的登录窗口；现有会话已 %.1f 小时未更新，"
                             "不能当作刚登录" % (age_h if age_h is not None else 0.0)),
-                    "hint": "已自动发起核验；也可点「去登录」重登一次（登完直接关窗即保存）",
+                    "hint": ("已自动发起核验；也可点「去登录」重登一次"
+                             if _background_account_verification() else
+                             "后台账号核验已关闭；需要时点击「立即核验」或「去登录」"),
                     "stale": True,
                     "age_h": round(age_h, 2) if age_h is not None else None,
                     "verifying": verifying}
@@ -3361,6 +3388,8 @@ def _kick_login_probe(plat: str) -> dict:
     不阻塞登录请求：起一个 daemon 线程顺序探，结果写进路径账（矩阵里可见）。
     任何异常都吞掉——登录已经是成功路径。
     """
+    if not _background_account_verification():
+        return {"ok": False, "why": "后台账号核验已关闭，登录资料已保存"}
     try:
         on = bool(((_State.cfg or {}).get("web") or {})
                   .get("login_reprobe", True))
@@ -3382,7 +3411,7 @@ def _kick_login_probe(plat: str) -> dict:
     def _run():
         for t in targets:
             try:
-                out = cb(t, scope="")
+                out = cb(t, scope="", role="account")
                 ok = bool((out or {}).get("ok"))
                 rows = (out or {}).get("rows")
                 _State.logger.info("[登录] 自动复探 %s → ok=%s rows=%s",
@@ -3413,11 +3442,7 @@ def _clear_login_wall_memo(plat: str, key: str = "") -> list:
             names.update(apps)
             names.add(v)
     names.discard("")
-    try:
-        from core.yield_stats import user_data_root
-        root = str(user_data_root(_effective_crawler_config()))
-    except Exception:
-        root = "user_data"
+    root = _ud_root_runtime("account")
     for p in sorted(names):
         f = os.path.join(root, p, "login_wall.json")
         try:
@@ -3453,7 +3478,7 @@ def _verify_login_slot(key: str) -> dict:
         return {"ok": False, "err": "未知登录槽位：%s" % key}
     try:
         from crawlers.challenge import classify_text
-        cfg = _effective_crawler_config()
+        cfg = _effective_crawler_config("account")
         crawler = slot_crawler(key, cfg, _State.logger)
         if not os.path.isfile(crawler.session_state_path):
             return {"ok": False, "err": "该槽位还没有保存会话"}
@@ -3593,10 +3618,12 @@ def _slot_verify_loop():
     r1153：每 5 分钟最多核验 1 个「最久没核验」的槽位；没有会话文件的槽位
     不进候选（没有会话就没什么可核验的，报错只会制造噪声）。
     """
+    if not _background_account_verification():
+        return
     while True:
         time.sleep(300)
         try:
-            cfg = _effective_crawler_config()
+            cfg = _effective_crawler_config("account")
             cand = {}
             for key in LOGIN_SLOT_ORDER:
                 # 只核验「以页面为证据」的独立端槽位（*_h5）；PC 槽位走真查询自检
@@ -3622,6 +3649,8 @@ def _slot_verify_loop():
 
 def _ensure_slot_verify_loop():
     global _SLOT_VERIFY_THREAD
+    if not _background_account_verification():
+        return
     if _SLOT_VERIFY_THREAD is not None and _SLOT_VERIFY_THREAD.is_alive():
         return
     _SLOT_VERIFY_THREAD = threading.Thread(
@@ -4014,6 +4043,8 @@ def _probe_task_channel(task, leg, plat, **kw):
 
 
 def _record_probe_auth(plat, scope, detail, frm, to, date):
+    if _query_session_roles()["monitor_anonymous"]:
+        return
     if not detail:
         return
     now = time.time()
@@ -4032,6 +4063,8 @@ def _record_probe_auth(plat, scope, detail, frm, to, date):
 
 
 def _record_probe_auth_reject(plat, scope, reason, frm, to, date, path=""):
+    if _query_session_roles()["monitor_anonymous"]:
+        return
     """Explicit login/verification wall from the current probe attempt.
 
     Empty/calendar/timeout paths never call this; only a real login or
@@ -4154,7 +4187,9 @@ def _probe_takeover_url(plat, fc, tc, fn, tn, date):
     if not url:
         from crawlers import REGISTRY
         try:
-            c = REGISTRY[plat](_effective_crawler_config(), _State.logger)
+            probe_cfg = _effective_crawler_config()
+            ensure_session_supported(plat, probe_cfg)
+            c = REGISTRY[plat](probe_cfg, _State.logger)
             url = c.login_url()
         except Exception:
             url = ""
@@ -4213,6 +4248,15 @@ def _probe_open_challenge(cid):
             return {"ok": False, "err": "同时最多打开两个验证窗口"}
         if not t.get("url"):
             return {"ok": False, "err": "没有可打开的渠道页面，请先登录渠道"}
+        probe_cfg = _effective_crawler_config()
+        try:
+            ensure_session_supported(t["plat"], probe_cfg)
+        except AnonymousSessionUnsupportedError as exc:
+            return {"ok": False, "status": exc.status, "err": str(exc),
+                    "session_role": "monitor"}
+        if probe_cfg["anonymous_query"]:
+            return {"ok": False, "status": "unsupported", "session_role": "monitor",
+                    "err": "匿名查询不保存验证或登录状态；请稍后重试，购买前可登录渠道核价"}
         evt, done = threading.Event(), threading.Event()
         session = {"evt": evt, "done": done, "error": ""}
         _PROBE_CHALLENGE_SESSIONS[cid] = session
@@ -4224,7 +4268,7 @@ def _probe_open_challenge(cid):
     def _run():
         try:
             from crawlers import REGISTRY
-            c = REGISTRY[t["plat"]](_effective_crawler_config(), _State.logger)
+            c = REGISTRY[t["plat"]](probe_cfg, _State.logger)
             c.open_challenge_window(t["url"], evt, timeout_s=300,
                                     idx=len(_PROBE_CHALLENGE_SESSIONS) - 1)
         except Exception as e:
@@ -4277,6 +4321,7 @@ def _probe_verify_challenge(cid):
         cfg = dict(_effective_crawler_config())
         cfg.update({"max_attempts": 1, "tuniu_max_poll": 3,
                     "backoff_seconds": 1})
+        ensure_session_supported(t["plat"], cfg)
         c = REGISTRY[t["plat"]](cfg, _State.logger)
         c.probe_mode = False
         try:
@@ -4481,7 +4526,7 @@ def _probe_search(frm, to, date, plats, legs=None, task=None, cancel=None,
         raise RuntimeError("已有探针在采集，请稍后再试")
     globals()["_PROBE_LAST"] = _now0
     cfg = (_State.cfg or {})
-    crawler_cfg = dict(cfg.get("crawler") or {})
+    crawler_cfg = _effective_crawler_config()
     # 探针与定时采集必须拿到同一份 android 段（r630）：这里自建爬虫实例，
     # 少了这一段时 App 渠道会一律报 runtime not ready: disabled——
     # 「渠道自检」按钮点了永远失败，而定时采集其实正常。
@@ -4528,6 +4573,7 @@ def _probe_search(frm, to, date, plats, legs=None, task=None, cancel=None,
                               status="running", msg="已启动真实请求")
             c = None
             try:
+                ensure_session_supported(p, crawler_cfg)
                 c = _REG[p](crawler_cfg, _State.logger)
                 c.probe_mode = True
 
@@ -5889,16 +5935,17 @@ def _flight_trend_core(entry, days=14):
                 if _watch_cabin(_cabtxt(g)) != entry.get("cabin"):
                     continue
             try:
-                price = round(float(g.get("price")))
+                price = float(g.get("price"))
             except (TypeError, ValueError):
                 continue
             if price <= 0:
                 continue
-            eff = _qual_price({"price": price, "_platform": r["platform"],
-                               "intl": 1 if g.get("intl") else 0})
+            quote = quote_from_record(dict(g, price=price))
+            eff = reminder_price(
+                dict(g, price=price), require_final_for_alerts(_State.cfg or {}))
             at = str(r["fetched_at"] or "")
             day = at[:10]
-            points.append([at, price, r["platform"], round(float(eff), 1),
+            points.append([at, price, r["platform"], eff,
                            int(r["id"] or 0), idx, _watch_cabin(_cabtxt(g))])
             if day:
                 cur = daily.get(day)
@@ -5907,7 +5954,7 @@ def _flight_trend_core(entry, days=14):
             last = latest.get(r["platform"])
             if not last or at >= last.get("at", ""):
                 latest[r["platform"]] = {
-                    "price": price, "eff": round(float(eff), 1),
+                    "price": price, "eff": eff, "quote": quote,
                     "at": at, "rowId": int(r["id"] or 0), "idx": idx,
                     "cabin": _watch_cabin(_cabtxt(g))}
     history = []
@@ -5939,14 +5986,16 @@ def _flight_trend_core(entry, days=14):
             # 同平台同日可能有多舱位日桶；取最低 close，不按 SQL 行序取任意一条
             if prev is None or h["close"] < prev.get("price", 1e18):
                 latest[h["platform"]] = {
-                    "price": h["close"], "eff": h["close"],
+                    "price": h["close"], "eff": None,
+                    "quote": quote_from_record(
+                        {"price": h["close"], "platform": h["platform"]}),
                     "at": h["fetched_max"], "rowId": 0, "idx": 0,
                     "agg": True, "day": last_day, "cabin": h["cabin"]}
     if len(points) > 1500:
         points = points[-1500:]
     cur = None
     if latest:
-        p0, best = min(latest.items(), key=lambda kv: kv[1]["eff"])
+        p0, best = min(latest.items(), key=lambda kv: quote_sort_key(kv[1]))
         cur = {"platform": p0, **best}
     out = {"ok": True, "id": entry.get("id"), "days": days,
            "from": fc, "to": tc, "date": entry.get("date"),
@@ -5954,7 +6003,7 @@ def _flight_trend_core(entry, days=14):
            "daily": sorted(daily.items()), "history": history,
            "latest": latest, "current": cur,
            "scannedRows": len(rows),
-           "note": "点=按采集时刻回放的真实同航班同舱位行；日桶=全航线采集落库、按平台/舱位分组的日 OHLC（不依赖关注配置）；price 为渠道列表价，eff 为达标口径（飞猪加税垫）；raw 未给舱位的行不并入指定舱；没有采集点不生成历史"}
+           "note": "点和日桶回放来源报价；quote 记录费用明细与完整性，eff 只在当前提醒口径可判定时提供；缺少税费或绑定费用时最终价未确认。"}
     _WATCH_CACHE[cache_key] = (now, out)
     if len(_WATCH_CACHE) > 64:
         _WATCH_CACHE.pop(next(iter(_WATCH_CACHE)))
@@ -6031,11 +6080,14 @@ def _multicity_alert_round(user, notifier, storage, logger, base_url="",
         if str(row.get("platform") or "") not in (
                 _mc_field(user, "platforms", []) or []):
             continue
-        try:
-            price = float(row.get("total_price") or 0)
-        except (TypeError, ValueError):
+        if row.get("total_price") is None:
             continue
-        if price <= 0:
+        extra = row.get("extra") or {}
+        record = dict(extra, price=row["total_price"],
+                      platform=row.get("platform") or "")
+        require_final = require_final_for_alerts(_State.cfg or {})
+        price = reminder_price(record, require_final)
+        if price is None:
             continue
         try:
             age = (datetime.now() - datetime.strptime(
@@ -6045,7 +6097,8 @@ def _multicity_alert_round(user, notifier, storage, logger, base_url="",
             age = 1e9
         if age > 6 * 3600:
             continue
-        dk = "mc|%s|%s|%s" % (uname, key, int(round(thr)))
+        dk = alert_state_key(
+            "mc|%s|%s|%s" % (uname, key, int(round(thr))), require_final)
         try:
             last = storage.get_alert_state(dk)
         except Exception:
@@ -6061,7 +6114,6 @@ def _multicity_alert_round(user, notifier, storage, logger, base_url="",
             continue
         pname = Alerter.plat_cn(str(row.get("platform") or "")) or "渠道"
         chain = _mc_chain_label(segs)
-        extra = row.get("extra") or {}
         leg_lines = []
         for i, leg in enumerate(extra.get("legs") or []):
             times = "%s→%s" % (leg.get("dep") or "—", leg.get("arr") or "—")
@@ -6087,6 +6139,7 @@ def _multicity_alert_round(user, notifier, storage, logger, base_url="",
             int(round(thr - price)),
             ("\n" + "\n".join(leg_lines)) if leg_lines else "",
             ("\n\n[打开控制台核对行程](%s)" % link) if link else "")
+        desp += "\n\n- 费用口径：" + notification_price_note(record, require_final)
         try:
             res = notifier.send(title, desp)
         except Exception as e:
@@ -6136,11 +6189,10 @@ def _watch_alert_round(user, notifier, storage, logger, base_url="",
         except Exception:
             continue
         cur = tr.get("current") or {}
-        # 达标判定与检索台「达标」标记同口径：eff（含税垫/跨渠道口径），
-        # 不是渠道列表裸价。两者不一致会出现 UI 未达标却推送的情况。
-        price = cur.get("eff")
-        if price is None:
-            price = cur.get("price")
+        if cur.get("price") is None:
+            continue
+        require_final = require_final_for_alerts(_State.cfg or {})
+        price = reminder_price(cur, require_final)
         if price is None:
             continue
         _route = _watch_parent_route(w, user)
@@ -6158,8 +6210,8 @@ def _watch_alert_round(user, notifier, storage, logger, base_url="",
             _age = 1e9
         if _age > 6 * 3600:
             continue
-        key = "watch|%s|%s|%s|%s" % (
-            user, w.get("id"), w.get("date"), target)
+        key = alert_state_key("watch|%s|%s|%s|%s" % (
+            user, w.get("id"), w.get("date"), target), require_final)
         try:
             last = storage.get_alert_state(key)
         except Exception:
@@ -6199,6 +6251,7 @@ def _watch_alert_round(user, notifier, storage, logger, base_url="",
             price, pname, cur.get("at") or "—", target, gap,
             covered, total, cur.get("at") or "—",
             ("\n[打开关注航班监控台](%s)" % link) if link else "")
+        desp += "\n\n- 费用口径：" + notification_price_note(cur, require_final)
         try:
             res = notifier.send(title, desp)
         except Exception as e:
@@ -7195,7 +7248,7 @@ _STATE_CACHE_TTL = 48 * 3600          # 超过则丢弃（不展示数天前价�
 _STATE_CACHE_MAGIC = b"TKMSTATE1\n"
 # /api/state payload schema: bump whenever serialized fields change in a way
 # that must not be served from an older disk snapshot (r340 adds provenance).
-_STATE_SCHEMA = "probe-r365-1"
+_STATE_SCHEMA = "final-quote-coupon-2"
 
 
 def _state_cache_path():
@@ -7359,6 +7412,7 @@ def _build_state(sig):
            # 口径随实况；服务未起时留空）
            "svc": (("%s:%d" % _State.srv.server_address)
                    if getattr(_State, "srv", None) else "")}
+    out = _annotate_price_quotes(out)
     body = (json.dumps(out, ensure_ascii=False).encode("utf-8")
             if sig is not None else None)
     # ETag 随响应体一并缓存：轮询 304 路径零 hash 开销
@@ -7562,7 +7616,7 @@ _HEALTH_LOCK = threading.Lock()
 def _cookie_states() -> dict:
     """Read-only session-state expiry hint (no cookie values leave disk)."""
     from crawlers import REGISTRY
-    cfg = _effective_crawler_config()
+    cfg = _effective_crawler_config("account")
     out = {}
     now = time.time()
     # 渠道集合从注册表派生（r710）：写死五家会让 App 渠道的「会话将过期」
@@ -7836,7 +7890,7 @@ def _health_decorate(out: dict) -> dict:
         # 登录卡的 App「已保存会话」判定：查的必须是采集器**真的写进去**的
         # 那个目录（唯一口径 + 启动级，见 `_ud_root_runtime()`）。原来自算
         # 一遍 → 装了 `TM_USER_DATA_DIR` 时永远判「未保存」（r1063 T10 复核）。
-        _udir = _ud_root_runtime()
+        _udir = _ud_root_runtime("account")
         from crawlers import APP_CHANNELS as _APPCH
         for _p in _APPCH:
             _login_ev[_p] = {
@@ -8199,8 +8253,8 @@ def _radar_alert_dispatch(user, query, date, low, dec, channel, basis):
         "新低" if dec.kind == "new_low" else "阈值",
         query.get("from", ""), low.get("to") or query.get("to", ""),
         date, dec.price)
-    lines = ["- **价格**：￥%.0f（%s）" % (
-        dec.price, low.get("basis_label") or basis or "口径未标注")]
+    lines = ["- **价格**：" + notification_price_note(
+        low, require_final_for_alerts(_State.cfg or {}))]
     if dec.prev_low is not None:
         lines.append("- **较上次低点**：￥%.0f（降 ￥%.0f）"
                      % (dec.prev_low, dec.prev_low - dec.price))
@@ -8241,10 +8295,16 @@ def _radar_eval_alerts(user, query, dates, st):
         items = list((d.get("by_channel") or {}).items())
         if not items:
             continue
-        channel, low = min(items, key=lambda kv: float(
-            kv[1].get("price") or 0))
-        price = float(low.get("price") or 0)
-        basis = str(low.get("basis") or "")
+        require_final = require_final_for_alerts(_State.cfg or {})
+        candidates = [
+            (reminder_price(low, require_final), channel, low)
+            for channel, low in items
+        ]
+        candidates = [item for item in candidates if item[0] is not None]
+        if not candidates:
+            continue
+        price, channel, low = min(candidates, key=lambda item: item[0])
+        basis = "final_payable" if require_final else str(low.get("basis") or "")
         prev = st.get_radar_alert_state(user, qkey, d["date"])
         dec = evaluate(
             float(prev["low_price"]) if prev else None,
@@ -8559,6 +8619,39 @@ class _Srv(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
+_PRICE_RECORD_KEYS = frozenset({
+    "platform", "_platform", "channel", "src", "fno", "flight_no", "flightNo",
+})
+
+
+def _annotate_price_quotes(value):
+    """所有报价响应使用同一费用契约；历史记录缺费用时保持未确认。"""
+    if isinstance(value, list):
+        return [_annotate_price_quotes(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    result = {key: _annotate_price_quotes(item) for key, item in value.items()}
+    if (result.get("price") is not None
+            and _PRICE_RECORD_KEYS.intersection(result)):
+        result["quote"] = quote_from_record(result)
+        if "eff" in result:
+            result["eff"] = reminder_price(
+                result, require_final_for_alerts(_State.cfg or {}))
+    return result
+
+
+def _manual_price_quote(payload):
+    """核对输入仅代表用户核对的费用，不升级为渠道自动结算证据。"""
+    allowed = {
+        "quoted_amount", "basis", "charges", "extras_complete",
+        "discounts_complete", "confirmed",
+    }
+    unknown = set(payload) - allowed
+    if unknown:
+        raise ValueError("不支持的费用字段：" + "、".join(sorted(unknown)))
+    return build_quote(dict(payload, source_type="manual_checkout"))
+
+
 class _Handler(BaseHTTPRequestHandler):
     # HTTP/1.1 才走 keep-alive/条件请求：HTTP/1.0（默认）下 Chromium
     # 不缓存 /api/state，也不会发 If-None-Match，304 分支形同虚设
@@ -8568,6 +8661,7 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
     def _json(self, obj, code=200):
+        obj = _annotate_price_quotes(obj)
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         # GET JSON 统一内容 ETag：健康/脉冲/配置轮询在数据未变时回 304，
         # 不再每拍重新传输/解析 3-100KB。POST 响应不参与条件请求。
@@ -8726,6 +8820,15 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+        elif self.path == "/assets/delay-insurance.js":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/javascript; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Content-Length", str(len(DELAY_INSURANCE_JS)))
+            self.end_headers()
+            self.wfile.write(DELAY_INSURANCE_JS)
+        elif self.path == "/api/delay-insurance/airports":
+            self._json({"airports": get_airports(), "scope": "中国大陆机场"})
         elif self.path == "/notify":
             self.send_response(302)
             self.send_header("Location", "/notify/latest")
@@ -10273,6 +10376,35 @@ class _Handler(BaseHTTPRequestHandler):
             if (_up1(_org1).netloc or "") != (self.headers.get("Host") or ""):
                 self._json({"ok": False, "err": "跨站请求已拒绝"}, 403)
                 return
+        if self.path == "/api/delay-insurance/assess":
+            body = self._post_json("延误险评估")
+            if body is None:
+                return
+            try:
+                result = assess_delay_insurance(body)
+            except ValueError as exc:
+                self._json({"ok": False, "error": str(exc)}, 400)
+                return
+            except DelayInsuranceDataError as exc:
+                self._json({"ok": False, "error": str(exc), "result": exc.result}, 502)
+                return
+            except Exception:
+                logging.getLogger(__name__).exception("延误险评估发生内部错误")
+                self._json({"ok": False, "error": "延误险评估发生内部错误，请查看运行日志"}, 500)
+                return
+            self._json({"ok": True, "result": result})
+            return
+        if self.path == "/api/price-quote":
+            body = self._post_json("费用核对")
+            if body is None:
+                return
+            try:
+                quote = _manual_price_quote(body)
+            except ValueError as exc:
+                self._json({"ok": False, "error": str(exc)}, 400)
+                return
+            self._json({"ok": True, "quote": quote})
+            return
         if self.path == "/api/session/reset":
             # 手动「换一份干净档案」（r1063 T47）：用户实机验证过——清数据后又能看机票。
             # **只挪不删**：整个目录改名备份，随时可还原；我们自己的状态文件拷回新档案。
@@ -10285,9 +10417,7 @@ class _Handler(BaseHTTPRequestHandler):
                     self._json({"ok": False, "err": "缺少 plat"}, 400)
                     return
                 from core import session_reset as _sr
-                root = str(_State.cfg.get("crawler", {}).get("user_data_dir")
-                           or "user_data") if isinstance(_State.cfg, dict) \
-                    else "user_data"
+                root = _ud_root_runtime("monitor")
                 rep = _sr.backup(plat, root, reason="manual",
                                  keep=_sr._keep_cfg(plat, 3))
                 if rep.get("ok"):
@@ -10299,8 +10429,10 @@ class _Handler(BaseHTTPRequestHandler):
                         except Exception:
                             pass
                 self._json({"ok": bool(rep.get("ok")), "result": rep,
-                            "note": "旧档案已备份；新档案是干净的浏览器身份"
-                                    "（登录态会丢，需要时到「渠道登录」重登）"})
+                            "session_role": "monitor",
+                            "note": ("旧监控资料已备份；后续继续匿名查询"
+                                     if _query_session_roles()["monitor_anonymous"] else
+                                     "旧档案已备份；需要时到「渠道登录」重登")})
             except Exception as e:
                 self._json({"ok": False, "err": "重置失败：%s" % str(e)[:120]}, 500)
         elif self.path == "/api/session/restore":
@@ -10315,10 +10447,7 @@ class _Handler(BaseHTTPRequestHandler):
                     self._json({"ok": False, "err": "缺少 plat"}, 400)
                     return
                 from core import session_reset as _sr
-                root = "user_data"
-                if isinstance(_State.cfg, dict):
-                    root = str((_State.cfg.get("crawler", {})
-                                .get("user_data_dir")) or "user_data")
+                root = _ud_root_runtime("monitor")
                 rep = _sr.restore(plat, root, name)
                 self._json({"ok": bool(rep.get("ok")), "result": rep})
             except Exception as e:
@@ -11265,9 +11394,8 @@ class _Handler(BaseHTTPRequestHandler):
                 cfg = _effective_crawler_config()
                 out = build_radar(body, _State.logger,
                                   proxy=str(cfg.get("proxy") or ""),
-                                  user_data_dir=str(
-                                      cfg.get("user_data_dir")
-                                      or "user_data"))
+                                  user_data_dir=cfg["user_data_dir"],
+                                  anonymous_query=cfg["anonymous_query"])
                 try:
                     _radar_save_result(out)
                 except Exception as _e:
@@ -12148,7 +12276,8 @@ def _radar_auto_loop():
                                  else getattr(u, "name", "")),
                         **q,
                     }, _State.logger, proxy=str(cfg.get("proxy") or ""),
-                        user_data_dir=str(cfg.get("user_data_dir") or "user_data"))
+                        user_data_dir=cfg["user_data_dir"],
+                        anonymous_query=cfg["anonymous_query"])
                     n = _radar_save_result(out, source="auto")
                     _State.logger.info("[雷达监控] 快照 %d 条", n)
                 except Exception as e:
@@ -12192,11 +12321,13 @@ def _bind_console(host: str, port, tries: int = 10):
 
 def start_web(cfg, job, report_push, logger=None, users=None,
               reload_cb=None, config_path="config.yaml", version="",
-              login_saved_cb=None, alerters=None):
+              login_saved_cb=None, alerters=None, query_sessions=None):
     """在守护线程里启动本地控制台；失败只告警不中断监控。"""
     _State.cfg = cfg
     import copy as _copy
     _State.boot_cfg = _copy.deepcopy(cfg)
+    _State.query_sessions = (query_sessions if query_sessions is not None
+                             else resolve_query_sessions(cfg.get("crawler") or {}))
     _State.users = users
     _State.alerters = list(alerters or [])
     _State.job = job
@@ -12207,6 +12338,10 @@ def start_web(cfg, job, report_push, logger=None, users=None,
     _State.login_saved_cb = login_saved_cb
     if logger:
         _State.logger = logger
+    previous_verification = _slot_verify_load()
+    with _SLOT_VERIFY_LOCK:
+        _SLOT_VERIFY.clear()
+        _SLOT_VERIFY.update(previous_verification)
     port = int((cfg.get("web") or {}).get("port", 8765))
     # 监听地址可配（web.host，默认 127.0.0.1）：手机端钉钉「完整详情」
     # 依赖局域网可达——服务只绑回环时 base_url 配了也连不上，host 必须可配

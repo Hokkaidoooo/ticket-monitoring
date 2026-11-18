@@ -60,3 +60,12 @@ def test_block_comment_never_closes_early():
     # 只要能被 `/\*.*?\*/` 完整匹配，就说明没有提前闭合的问题；
     # 这里额外防一种：注释体内出现 `/*`（嵌套），会让读者误判范围。
     assert not hits, "有块注释疑似提前闭合：%s" % hits
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="环境没有 node，跳过 JS 语法检查")
+def test_delay_insurance_script_parses():
+    """独立加载的延误险脚本也必须经过真实 JavaScript 解析器。"""
+    script = os.path.join(ROOT, "webui_assets", "delay_insurance.js")
+    result = subprocess.run(["node", "--check", script], capture_output=True,
+                            encoding="utf-8", errors="replace")
+    assert result.returncode == 0, result.stderr

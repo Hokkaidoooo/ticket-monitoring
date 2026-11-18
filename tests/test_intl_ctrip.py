@@ -127,13 +127,12 @@ def _cal_body(rows):
 
 def test_intl_calendar_target_day_match_and_tax():
     """全年 366 行日历（端点忽略 startDate 返全窗）只取目标日行；
-    transportPrice>0 落 tax；price=0 无报价日剔（宁缺勿错）。"""
+    totalPrice确认含税报价，transportPrice保留原字段；无报价日剔除。"""
     rows = [
         # 无报价日（price 0）
         {"departDate": "/Date(1792166400000+0800)/", "price": 0,
          "totalPrice": 0, "transportPrice": 0},
-        # 目标日有价（真报文形态：totalPrice==price、transportPrice
-        # 税费构成、returnDate null 标记单程）
+        # 目标日有价；transportPrice未确认税额语义，不用于费用加总。
         {"departDate": "/Date(1792252800000+0800)/",
          "returnDate": "/Date(-62135798399111+0800)/",
          "price": 1238.0, "totalPrice": 1238.0, "transportPrice": 339.0},
@@ -142,7 +141,10 @@ def test_intl_calendar_target_day_match_and_tax():
     assert len(out) == 1
     el = out[0]
     assert el["price"] == 1238.0
-    assert el["tax"] == 339.0
+    assert el["tax"] is None
+    assert el["transportPrice"] == 339.0
+    assert el["basis"] == "tax_included"
+    assert el["quote"]["payable_total"] is None
     assert el["name"] == "日历最低价"
     assert el["depDate"] == "2026-10-18"
     assert el["depTime"] == "" and el["arrTime"] == ""   # 占位键律

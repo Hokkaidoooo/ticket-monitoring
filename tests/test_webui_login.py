@@ -59,6 +59,11 @@ from crawlers.base import BaseCrawler
 from crawlers.challenge import classify_text
 
 
+@pytest.fixture(autouse=True)
+def _initialize_query_configuration(monkeypatch):
+    monkeypatch.setattr(webui._State, "cfg", {})
+
+
 # ---- merged from tests/test_webui_login.py ----
 
 # ---- merged from tests/test_r1063_all_dual_login.py ----
@@ -683,10 +688,11 @@ def test_targets_include_vendor_app_channel(monkeypatch):
     import webui
     calls = []
     monkeypatch.setattr(webui._State, "probe_cb",
-                        lambda p, scope="": (calls.append(p) or
+                        lambda p, scope="", role="account": (calls.append(p) or
                                              {"ok": True, "rows": 1}),
                         raising=False)
-    monkeypatch.setattr(webui._State, "cfg", {}, raising=False)
+    monkeypatch.setattr(webui._State, "cfg", {
+        "crawler": {"verify_account_in_background": True}}, raising=False)
     rep = webui._kick_login_probe("ctrip_h5")
     assert rep["ok"] is True
     assert rep["targets"] == ["ctrip", "app_ctrip"], rep
@@ -774,11 +780,12 @@ def test_finish_login_saves_from_profile(tmp_path, monkeypatch):
         json.dumps({"cookies": [], "origins": []}), encoding="utf-8")
 
     import webui
-    webui._State.cfg = {"crawler": {"user_data_dir": str(tmp_path)}}
+    webui._State.cfg = {"crawler": {
+        "user_data_dir": str(tmp_path), "verify_account_in_background": True}}
     webui._State.login_sessions.clear()
     calls = []
     monkeypatch.setattr(webui._State, "probe_cb",
-                        lambda p, scope="": (calls.append(p) or {"ok": True}),
+                        lambda p, scope="", role="account": (calls.append(p) or {"ok": True}),
                         raising=False)
 
     rep = webui._finish_login("tuniu", "tuniu")
@@ -1092,7 +1099,7 @@ def _pin_root(tmp_path, monkeypatch):
     """
     import webui
     monkeypatch.setenv("TM_USER_DATA_DIR", str(tmp_path))
-    monkeypatch.setattr(webui, "_ud_root_runtime", lambda: str(tmp_path),
+    monkeypatch.setattr(webui, "_ud_root_runtime", lambda role="monitor": str(tmp_path),
                         raising=False)
     monkeypatch.setattr(
         webui._State, "cfg",
@@ -1199,7 +1206,8 @@ def _mk_profile(tmp_path, slot, age_h):
 def _call(tmp_path, monkeypatch, plat, slot):
     import webui
     monkeypatch.setattr(webui._State, "cfg",
-                        {"crawler": {"user_data_dir": str(tmp_path)}}, raising=False)
+                        {"crawler": {"user_data_dir": str(tmp_path),
+                                     "verify_account_in_background": True}}, raising=False)
     monkeypatch.setattr(webui._State, "login_sessions", {}, raising=False)
     verified = []
     monkeypatch.setattr(webui, "_verify_login_slot",
@@ -1207,7 +1215,7 @@ def _call(tmp_path, monkeypatch, plat, slot):
                         raising=False)
     probed = []
     monkeypatch.setattr(webui._State, "probe_cb",
-                        lambda p, scope="": probed.append(p) or {"ok": True},
+                        lambda p, scope="", role="account": probed.append(p) or {"ok": True},
                         raising=False)
     return webui._finish_login(plat, slot), verified, probed
 
@@ -1367,7 +1375,7 @@ def test_login_state_view_carries_stale(q_cls, tmp_path, monkeypatch):
     # 前序用例遗留的后台线程会在断言窗口内重载它（CI xdist 实测
     # saved=False）。这里只钉 _login_state_view 对 user_data_dir 的语义。
     monkeypatch.setattr(webui, "_effective_crawler_config",
-                        lambda: {"user_data_dir": str(tmp_path)})
+                        lambda role="monitor": {"user_data_dir": str(tmp_path)})
     try:
         q_cls.login_suspect = False
         v = webui._login_state_view()
