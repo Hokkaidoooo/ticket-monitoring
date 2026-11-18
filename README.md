@@ -32,7 +32,7 @@
 ### Windows（源码，PowerShell）
 
 ```powershell
-git clone https://github.com/dengmeiluan/ticket-monitoring.git
+git clone --branch feature/delay-insurance https://github.com/Hokkaidoooo/ticket-monitoring.git
 cd ticket-monitoring
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
 .\.venv\Scripts\Activate.ps1
@@ -46,7 +46,7 @@ python main.py          # 前台；后台：.\start.ps1（停止：.\stop.ps1）
 ### macOS / Linux（源码）
 
 ```bash
-git clone https://github.com/dengmeiluan/ticket-monitoring.git
+git clone --branch feature/delay-insurance https://github.com/Hokkaidoooo/ticket-monitoring.git
 cd ticket-monitoring
 bash setup.sh
 source .venv/bin/activate
@@ -69,6 +69,8 @@ python -m core.setup_check       # 已激活 .venv；Windows/macOS/Linux 同一�
 跑起来后想知道现在最该做什么：`python -m core.advise`（只读诊断）；App 登录态与设备实况对账：`python -m core.app_check --fix`。
 
 ### 延误险回本评估
+
+延误险扩展以本分支源码为准，安装命令已指定 `feature/delay-insurance`。原项目发行包和在线演示不含此功能；后续在本分支更新源码。
 
 在本地控制台点击「延误险」，填写航班号和出发日期，自动查询 FlightAware 的本班动态、明确关联的同机前序和近期已完成航班记录，以及 Open-Meteo 的起降机场附近逐小时天气。具体航班明细旁也有「评估延误险」入口。
 

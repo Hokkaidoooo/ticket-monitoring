@@ -36,7 +36,7 @@ Supported OS: Windows 10/11 x64, macOS 12+ (Intel / Apple silicon), mainstream x
 ### Windows (source, PowerShell)
 
 ```powershell
-git clone https://github.com/dengmeiluan/ticket-monitoring.git
+git clone --branch feature/delay-insurance https://github.com/Hokkaidoooo/ticket-monitoring.git
 cd ticket-monitoring
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
 .\.venv\Scripts\Activate.ps1
@@ -50,7 +50,7 @@ python main.py          # foreground; background: .\start.ps1 (stop: .\stop.ps1)
 ### macOS / Linux (source)
 
 ```bash
-git clone https://github.com/dengmeiluan/ticket-monitoring.git
+git clone --branch feature/delay-insurance https://github.com/Hokkaidoooo/ticket-monitoring.git
 cd ticket-monitoring
 bash setup.sh
 source .venv/bin/activate
