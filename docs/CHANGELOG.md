@@ -11,6 +11,47 @@
 
 ---
 
+## [v1.7.8] - 2026-11-18
+
+**发版规范 v2：外部贡献以"作者身份"落库，Contributors 里真正能看到贡献者**
+
+### 为什么改
+
+2026-11-18 实测：`GET /repos/dengmeiluan/ticket-monitoring/contributors` 只返回维护者——
+GitHub 的 Contributors **只统计 commit 的 `author`**，`Co-authored-by:` 不进那个列表。
+我们此前把外部贡献 squash 进单一 root commit，虽然在提交信息里署了名，但贡献者本人在
+Insights → Contributors 里看不到自己，这对他不公平。
+
+### 新形态（`docs/RELEASE_PROCESS.md` §3.1）
+
+```
+root（维护者）
+├─ 外部贡献提交 × N   作者 = 贡献者本人（git am / cherry-pick 保留作者与日期）
+└─ 维护者收尾提交 × 0..1（必须是最后一笔）
+禁止 merge 提交
+```
+
+- 判据集中在 `tools/release_guard.py::history_shape`，`pre-push` 钩子与 CI 守卫都调它，
+  不再有两份实现；
+- `tools/converge_history.py` 识别"作者非维护者"的提交并**保留**（只压维护者的）；
+- 名单与对应提交见新增的 `docs/CONTRIBUTORS.md`。
+
+### 本轮据此补的两笔归属提交
+
+- `Shengcun-Scanner`（PR #17）：`core/safezip.py` 的初版实现以他的作者身份独立成笔；
+- `ismoss`（PR #20）：直接 `cherry-pick` 他的真实提交，作者 `moss <ismoss@users.noreply.github.com>`
+  与日期原样保留。
+
+维护者的加固（三个门禁、断言收紧、判定口径）跟在后面的收尾提交里。
+**HEAD 的树与改写前逐字节一致**（`266ecf5a1873` 前后相同），所以这版只是历史形态的变化，
+外加规范文档与工具更新。
+
+### 其它
+
+- `tools/release_guard.py` 新增 `--history-only`（钩子用，最快）；
+- 门禁 `tests/test_release_guard.py` 增加形态负控（merge 提交、收尾提交多余都要拒）。
+- 新增 `tools/contributors_check.py`（guard 一项 + 门禁）：核对 `docs/CONTRIBUTORS.md` 里记的每位贡献者，main 上是否真有以他作者身份落库的提交；记了名却没有提交 → 直接红（避免「文档里感谢、Contributors 里没有」）。
+
 ## [v1.7.7] - 2026-11-18
 
 **修复渠道登录三连（#19）+ 测试邮件必失败（#18）+ 新增按托运分档阈值**

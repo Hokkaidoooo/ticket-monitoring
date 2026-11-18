@@ -76,6 +76,25 @@ Release cadence:
 
 Do not push, retag, publish or rewrite shared history without explicit user authorization.
 
+### 3.1 历史形态（规范 v2，2026-11-18 修订）
+
+原先要求"单一 root commit"，但那条与 **GitHub Contributors 只认 author** 冲突：
+靠 `Co-authored-by:` 记名，贡献者在 Insights → Contributors 里根本不会出现。
+
+现在的形态（`tools/release_guard.py::history_shape` 是唯一判据，钩子与 CI 都调它）：
+
+```
+root（维护者）
+├─ 外部贡献提交 × N   作者 = 贡献者本人（git am / cherry-pick 保留作者与日期）
+└─ 维护者收尾提交 × 0..1（必须是最后一笔）
+禁止 merge 提交
+```
+
+- 日常在 main 上可以叠**维护者自己**的提交，但发版前必须合并进最后一笔收尾提交；
+- **外部贡献提交永不合并**（合并就丢作者，Contributors 又看不到他了）；
+- `tools/converge_history.py` 会识别"作者非维护者"的提交并保留；
+- 名单与对应提交见 `docs/CONTRIBUTORS.md`。
+
 ## 4. Definition of done
 
 - README/EN canonical intro unchanged; no stale version/count/jargon.
@@ -189,7 +208,7 @@ Release 页）互相矛盾，**而 CI 全绿**。原因是 CI 只跑测试，不
 
 | 防线 | 什么时候响 | 覆盖 |
 |---|---|---|
-| `.githooks/pre-push` | 推 `main` 前 | 本地拦：非单一提交直接拒绝，**没有绕过开关** |
+| `.githooks/pre-push` | 推 `main` 前 | 本地拦：形态不符（见 §3.1）直接拒绝，**没有绕过开关** |
 | `.github/workflows/guard.yml` | 每次 push 到 main | 远端拦：提交数 ≠ 1 → 该次 CI 红，并打印收敛命令 |
 | `.github/workflows/drift.yml` | 每日 09:20（北京时间） | 全量体检（含 Release/部署/镜像/资产），有漂移就开/更新 issue，消除后自动关 |
 
@@ -241,7 +260,7 @@ python tools/release_assets.py all
 ### 7.4 什么时候允许往 main 加提交
 
 - **写代码时随便加**：本地怎么叠都行，PR 分支本来就该有多笔；
-- **推 main 前必须收敛**：钩子 + CI 双拦，这是 §3 的执行方式；
+- **推 main 前必须收敛**：钩子 + CI 双拦，这是 §3.1 的执行方式（收敛只压维护者自己的提交，外部贡献提交保留作者）；
 - **没有"紧急绕过"**（2026-11-16 收紧）：留一个 `ALLOW_MULTI_COMMIT` 之类的开关，
   等于规则可以被一行环境变量取消。真有紧急修复，就当场
   `python tools/converge_history.py --yes` 收敛再推——它只压历史、不动文件树，

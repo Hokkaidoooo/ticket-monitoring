@@ -24,6 +24,12 @@ sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 
 
+def _git(args):
+    return subprocess.run(["git"] + args, cwd=ROOT, capture_output=True,
+                          text=True, encoding="utf-8",
+                          errors="replace").stdout
+
+
 def _run(args, **kw):
     return subprocess.run([sys.executable, "-X", "utf8"] + args, cwd=ROOT,
                           capture_output=True, text=True, encoding="utf-8",
@@ -74,7 +80,9 @@ def test_release_guard_runs_offline():
             payload = json.loads(line)
     assert payload is not None, "guard 没收尾输出 JSON 报告"
     names = [row["check"] for row in payload["rows"]]
-    assert "history is a single root commit" in names
+    # 规范 v2（2026-11-18）：形态判据从"单一 root commit"改成
+    # "root + 外部贡献提交 + 1 笔收尾提交"（Contributors 只认 author）
+    assert "history shape: root + foreign + one closing commit" in names
     assert "site build stamp current" in names
 
 
@@ -131,3 +139,116 @@ def test_release_assets_tool_is_promoted():
     doc = io.open(os.path.join(ROOT, "docs", "RELEASE_PROCESS.md"),
                   encoding="utf-8").read()
     assert "tools/release_assets.py" in doc, "RELEASE_PROCESS.md 没提资产流水线工具"
+
+
+def test_history_shape_v2_rules():
+    """形态判据本身的规则：1 个 root、禁 merge、收尾提交最多 1 笔。"""
+    from release_guard import history_shape
+    ok, detail = history_shape()
+    assert ok, detail
+    assert "root=1" in detail
+
+
+def test_history_shape_negative_controls():
+    """负控：合成历史（用临时克隆）违反任一规则都必须被拒。"""
+    import shutil
+    import subprocess
+    import tempfile
+
+    tmp = tempfile.mkdtemp(prefix="shape_")
+    repo = os.path.join(tmp, "r")
+    try:
+        def run(*a, **kw):
+            return subprocess.run(a, cwd=repo, capture_output=True, text=True,
+                                  encoding="utf-8", **kw)
+
+        subprocess.run(["git", "init", "-q", repo], check=True)
+        run("git", "config", "user.email", "m@t")
+        run("git", "config", "user.name", "maint")
+        io.open(os.path.join(repo, "a.txt"), "w", encoding="utf-8").write("a\n")
+        run("git", "add", "-A")
+        run("git", "commit", "-q", "-m", "root")
+
+        # 1) 合规：root + 外部提交 + 收尾
+        run("git", "commit", "-q", "--allow-empty", "--author=ext <e@t>",
+            "--date=2026-01-01T00:00:00", "-m", "foreign")
+        run("git", "commit", "-q", "--allow-empty", "-m", "closing")
+        gp = subprocess.run([sys.executable, "-X", "utf8",
+                             os.path.join(ROOT, "tools", "release_guard.py"),
+                             "--offline", "--no-collect", "--history-only",
+                             "--repo", repo],
+                            cwd=repo, capture_output=True, text=True,
+                            encoding="utf-8")
+        assert gp.returncode == 0, gp.stdout + gp.stderr
+
+        # 2) 违规：收尾提交之后又来一笔维护者提交 → 应拒
+        run("git", "commit", "-q", "--allow-empty", "-m", "another maint")
+        gp2 = subprocess.run([sys.executable, "-X", "utf8",
+                              os.path.join(ROOT, "tools", "release_guard.py"),
+                              "--offline", "--no-collect", "--history-only",
+                             "--repo", repo],
+                             cwd=repo, capture_output=True, text=True,
+                             encoding="utf-8")
+        assert gp2.returncode != 0, gp2.stdout
+
+        # 3) 违规：merge 提交 → 应拒
+        run("git", "checkout", "-q", "-b", "side")
+        run("git", "commit", "-q", "--allow-empty", "-m", "side")
+        run("git", "checkout", "-q", "-")
+        run("git", "merge", "-q", "--no-ff", "-m", "merge side", "side")
+        gp3 = subprocess.run([sys.executable, "-X", "utf8",
+                              os.path.join(ROOT, "tools", "release_guard.py"),
+                              "--offline", "--no-collect", "--history-only",
+                             "--repo", repo],
+                             cwd=repo, capture_output=True, text=True,
+                             encoding="utf-8")
+        assert gp3.returncode != 0, gp3.stdout
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_contributors_have_author_commits():
+    """docs/CONTRIBUTORS.md 记的每个人，main 上都要有以他作者身份的提交。
+
+    浅克隆（CI 的 test 分片是 fetch-depth: 1）看不到历史里的他作者，本用例跳过；
+    这条不变量由 `.github/workflows/guard.yml`（fetch-depth: 0）里的
+    `release_guard.py --offline` 负责——下面的断言保证那个作业真的还在。
+    """
+    shallow = _git(["rev-parse", "--is-shallow-repository"]).strip()
+    wf = io.open(os.path.join(ROOT, ".github", "workflows", "guard.yml"),
+                 encoding="utf-8").read()
+    assert "fetch-depth: 0" in wf, "guard.yml 必须全历史克隆（否则作者核对形同虚设）"
+    assert "release_guard.py --offline" in wf, "guard.yml 没调 guard，跳过就没有替代者"
+    if shallow == "true":
+        import pytest as _pytest
+        _pytest.skip("浅克隆看不到历史作者，由 guard 作业（fetch-depth: 0）核对")
+    r = _run(["tools/contributors_check.py"])
+    assert r.returncode == 0, (r.stdout or "") + (r.stderr or "")
+
+
+def test_contributors_check_catches_missing(tmp_path):
+    """负控：文档记了一个不存在的人，必须报错（门禁不空转）。"""
+    import shutil
+    fake = tmp_path / "docs"
+    fake.mkdir()
+    (fake / "CONTRIBUTORS.md").write_text(
+        "| 贡献者 | 内容 | 提交 |\n|---|---|---|\n"
+        "| [@nobody-here-xyz](https://github.com/nobody-here-xyz) | x | y |\n",
+        encoding="utf-8")
+    # 复制工具到临时仓库根，并在其中跑（工具按自身位置定位 ROOT）
+    (tmp_path / "tools").mkdir()
+    shutil.copy(os.path.join(ROOT, "tools", "contributors_check.py"),
+                tmp_path / "tools" / "contributors_check.py")
+    import subprocess
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "m@t"])
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "maint"])
+    (tmp_path / "a.txt").write_text("a\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"],
+                   check=True)
+    r = subprocess.run([sys.executable, "-X", "utf8",
+                        str(tmp_path / "tools" / "contributors_check.py"),
+                        "--quiet"], capture_output=True, text=True,
+                       encoding="utf-8")
+    assert r.returncode != 0, "文档里记了不存在的人却没报错"

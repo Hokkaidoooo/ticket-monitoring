@@ -1463,9 +1463,9 @@ def test_finish_login_toast_wording():
     """
     import webui
     src = webui_full_src()
-    assert ("已提交保存，正在校验会话（卡片状态会自动更新）" in src
-            or "下一轮采集验证后自动更新状态（无需重启）" in src), \
-        "验证时机词面缺席"
+    # 收紧：既然已经改成中性口径，就不许再写「✅ 会话已保存」这种假成功
+    assert "已提交保存，正在校验会话（卡片状态会自动更新）" in src, \
+        "登录完成 toast 没改成中性口径（假成功）"
     assert "下一轮采集（≤5 分钟）" not in src, "未保证的分钟数不得承诺"
     assert "SRX_LOGIN_T=0;SCAT=0;" in src, "finish 后未触发检索页登录态同步"
 

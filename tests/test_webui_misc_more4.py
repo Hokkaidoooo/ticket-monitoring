@@ -2012,8 +2012,13 @@ class TestWebuiV183Pins:
         src = self._src()
         i0 = src.index("function heFriendly")
         seg = src[i0:i0 + 320]
-        assert "Array.from(e).slice(0,80).join('')" in seg, \
+        # 1) 必须按**码点**切（不是 String.prototype.slice，那会劈出孤立代理对）
+        assert "Array.from(e).slice(0," in seg and ".join('')" in seg, \
             "heFriendly 仍按 UTF-16 码元截断（emoji 尾端劈出孤立代理对）"
+        # 2) 上限默认 80，且可被调用点放宽（登录失败要把「缺哪个 cookie」读完）
+        assert "const cap=(max&&max>0)?max:80;" in seg, \
+            "heFriendly 的默认上限不再是 80，或丢了可配置上限"
+        # 3) 旧的字面量码元截断不许回来
         assert "e.slice(0,80)" not in seg, "旧码元截断残留"
 
     # ---- audit v183 P2-1 health/pulse 脱离 state 签名门 ----

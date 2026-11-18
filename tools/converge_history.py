@@ -79,6 +79,20 @@ def main(argv=None):
     if count <= 1 and head == root:
         print("已经是单一 root commit，无需收敛。")
         return 0
+    # 规范 v2：**外部贡献提交必须保留作者**，收敛只压维护者自己的过程提交。
+    root_author = sh("git", "log", "-1", "--format=%an <%ae>", root)
+    foreign = []
+    for line in sh("git", "log", "--format=%H%x09%an <%ae>", "%s..HEAD" % root).splitlines():
+        sha, _tab, author = line.partition("\t")
+        if author.strip() != root_author:
+            foreign.append(sha)
+    if foreign:
+        print("检出 %d 笔外部贡献提交（作者非维护者），它们的作者身份会被保留："
+              % len(foreign))
+        for f in reversed(foreign):
+            print("  %s %s" % (f[:7], sh("git", "log", "-1", "--format=%an | %s", f)[:80]))
+        print("（收敛将：压缩 root 之后、第一笔外部提交之前的维护者提交；"
+              "cherry-pick 保留外部提交；其余维护者提交合并成最后一笔收尾提交）")
     if dirty and not a.allow_dirty:
         print("工作树不干净（%d 项），先提交或 stash：" % len(dirty))
         for d in dirty[:8]:

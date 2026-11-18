@@ -51,8 +51,11 @@ def row(name, ok, detail=""):
     return ok
 
 
+_CWD = {"repo": ROOT}
+
+
 def sh(*args):
-    return subprocess.run(args, cwd=ROOT, capture_output=True, text=True,
+    return subprocess.run(args, cwd=_CWD["repo"], capture_output=True, text=True,
                           encoding="utf-8", errors="replace").stdout.strip()
 
 
@@ -66,18 +69,66 @@ def version():
 
 
 # ------------------------------------------------------------------ 本地项
+def history_shape():
+    """公开历史形态（规范 v2，2026-11-18）：返回 (ok, 明细字符串)。
+
+        root（维护者）
+        ├─ 外部贡献提交 × N   作者=贡献者本人（GitHub Contributors 只认 author）
+        └─ 维护者收尾提交 × 0..1，且必须是最后一笔
+        禁止 merge 提交
+
+    为什么不是"单一 root commit"：那样只能靠 Co-authored-by 记名，而 GitHub 的
+    contributors 列表不认 co-author（实测）。要让贡献者真正出现在列表里，
+    main 上必须有一笔以他为 author 的提交。
+    """
+    root = sh("git", "rev-list", "--max-parents=0", "HEAD").splitlines()
+    if len(root) != 1:
+        return False, "root 提交数为 %d（必须恰好 1）" % len(root)
+    merges = sh("git", "rev-list", "--merges", "HEAD").splitlines()
+    if merges:
+        return False, "存在 merge 提交：%s" % ", ".join(m[:7] for m in merges[:3])
+
+    root_author = sh("git", "log", "-1", "--format=%an <%ae>", root[0])
+    commits = sh("git", "log", "--format=%H%x09%an <%ae>", "HEAD").splitlines()
+    commits.reverse()                          # 老 → 新
+    foreign, trailing_maint = [], 0
+    for line in commits[1:]:                   # 跳过 root
+        _sha, _tab, author = line.partition("\t")
+        if author.strip() == root_author:
+            trailing_maint += 1
+        else:
+            if trailing_maint:
+                return False, ("维护者过程提交应合并进最后一笔收尾提交；"
+                               "检出 %d 笔夹在外部贡献提交之前" % trailing_maint)
+            foreign.append(author.strip())
+    ok = trailing_maint <= 1
+    detail = "root=1, 外部贡献 %d 笔, 收尾提交 %d 笔" % (len(foreign), trailing_maint)
+    if not ok:
+        detail += "（收尾提交最多 1 笔）"
+    return ok, detail
+
+
 def check_history():
-    """单一 root commit：公开历史的形状。"""
-    count = sh("git", "rev-list", "--count", "HEAD")
-    root = sh("git", "rev-list", "--max-parents=0", "HEAD")
-    head = sh("git", "rev-parse", "HEAD")
-    try:
-        n = int(count)
-    except ValueError:
-        return row("history is a single root commit", False, "git 异常：%s" % count)
-    ok = (n == 1) and (root == head)
-    return row("history is a single root commit", ok,
-               "提交数 %d%s" % (n, "" if ok else "（先收敛：python tools/converge_history.py）"))
+    ok, detail = history_shape()
+    return row("history shape: root + foreign + one closing commit", ok, detail)
+
+
+def check_contributors():
+    """docs/CONTRIBUTORS.md 里记的每位贡献者，都要有以他作者身份落库的提交。
+
+    GitHub 的 Contributors 只认 author；文档里记了名、历史里却没有他的提交，
+    等于没给人家承认（2026-11-18 就是这么踩的）。
+    """
+    tool = os.path.join(ROOT, "tools", "contributors_check.py")
+    if not os.path.exists(tool):
+        return row("contributors credited with their own commits", True,
+                   "跳过（无 tools/contributors_check.py）")
+    r = subprocess.run([sys.executable, "-X", "utf8", tool, "--quiet"],
+                       cwd=ROOT, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    ok = r.returncode == 0
+    detail = "全部有作者提交" if ok else (r.stdout or r.stderr or "").strip()[:160]
+    return row("contributors credited with their own commits", ok, detail)
 
 
 def check_clean():
@@ -177,16 +228,29 @@ HINT = """
 def main(argv=None):
     ap = argparse.ArgumentParser(description="发版漂移体检")
     ap.add_argument("--offline", action="store_true", help="只跑本地项（CI 用）")
+    ap.add_argument("--repo", default="",
+                    help="要体检的仓库路径（默认本仓；形态负控用）")
+    ap.add_argument("--history-only", action="store_true",
+                    help="只校验历史形态（pre-push 钩子用，最快）")
     ap.add_argument("--no-collect", action="store_true", help="跳过 pytest 用例数采集")
     ap.add_argument("--json", action="store_true", help="输出 JSON")
     ap.add_argument("--hint", action="store_true", help="漂移时打印收敛步骤")
     ap.add_argument("--issue-body", default="", help="把报告写成 GitHub issue 正文")
     a = ap.parse_args(argv)
 
+    if a.repo:
+        _CWD["repo"] = os.path.abspath(a.repo)
+
+    if a.history_only:
+        ok, detail = history_shape()
+        row("history shape", ok, detail)
+        return 0 if ok else 1
+
     print("版本 %s · HEAD %s · 分支 main" % (version(), sh("git", "rev-parse", "--short", "HEAD")),
           flush=True)
     check_history()
     check_clean()
+    check_contributors()
     check_notes()
     check_site_stamp()
     check_readme_counts(not a.no_collect)

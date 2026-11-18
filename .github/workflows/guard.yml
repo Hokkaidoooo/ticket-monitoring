@@ -34,17 +34,10 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements.txt
-      - name: 单一 root commit
+      - name: 历史形态（root + 外部贡献提交 + 收尾提交，禁 merge）
         run: |
-          count=$(git rev-list --count HEAD)
-          root=$(git rev-list --max-parents=0 HEAD)
-          head=$(git rev-parse HEAD)
-          echo "提交数=$count root=${root:0:7} HEAD=${head:0:7}"
-          if [ "$count" -ne 1 ] || [ "$root" != "$head" ]; then
-            echo "::error::main 的公开历史必须是单一 root commit（当前 $count 笔）。"
-            echo "::error::收敛：python tools/converge_history.py --yes && git push --force origin main"
-            echo "::error::说明：docs/RELEASE_PROCESS.md「发版漂移自检与收敛」"
-            exit 1
-          fi
+          echo "提交数: $(git rev-list --count HEAD)"
+          git log --format='  %h | %an | %s' | head -20
+          python tools/release_guard.py --offline --no-collect
       - name: 站点构建戳 / 版本说明 / README 计数
         run: python tools/release_guard.py --offline --no-collect

@@ -32,7 +32,11 @@ def test_static_tight_status_map_and_full_title():
         src = f.read()
     i = src.index("r1028：双端半格只有 113px")
     block = src[i:i + 900]
-    assert "页面可达·明细待验" in block
+    # r-登录体验：page_ok 的完整句改为「已保存 · 页面可访问（该端未跑过明细）」，
+    # 半格短句必须同步（只改长句会让半格与 title 各说各话）。
+    assert "页面可达·未跑明细" in block, "半格短句没跟上新口径"
+    assert "页面可访问（该端未跑过明细）" in block, "完整句没跟上新口径"
+    assert "明细待验" not in block, "旧短句还留着（两套说法会让用户读成两种状态）"
     assert "会话有效·明细可用" in block
     assert "const _subTxt=tight?" in block
     j = src.index('class="lgsub" title=')
@@ -83,8 +87,10 @@ def test_login_start_shows_in_progress_copy():
     w = webui_full_src()
     i = w.index("async function loginStart(")
     seg = w[i:i + 1400]
-    assert ("正在提交登录请求" in seg) or ("正在打开窗口…" in seg), \
-        "loginStart 没有换成进行中文案"
+    # 收紧：新文案已随本条合入，必须出现；旧词面「正在打开窗口…」不许再当进度用
+    # （自由秒表冒充进度正是 issue #19 的三条症状之一）。
+    assert "正在提交登录请求" in seg, "loginStart 未改为中性的『正在提交登录请求』"
+    assert "正在打开窗口…" not in seg, "loginStart 又在用『正在打开窗口…』冒充进度"
     assert "aria-busy" in seg, "进行中态没给读屏播报"
     assert "b.disabled=true" in seg, "进行中应禁用按钮，避免重复触发"
 
