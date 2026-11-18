@@ -122,7 +122,7 @@ function diTime(value) {
 function diSourceLink(value, label) {
  if (!value) return '';
  const url = new URL(value);
- if (url.protocol !== 'https:' || !['zh.flightaware.com', 'api.open-meteo.com'].includes(url.hostname)) throw new Error('数据来源链接无效');
+ if (url.protocol !== 'https:' || url.hostname !== 'zh.flightaware.com') throw new Error('数据来源链接无效');
  return '<a href="' + he(url.href) + '" target="_blank" rel="noopener">' + he(label) + ' ↗</a>';
 }
 
@@ -137,8 +137,7 @@ function diWeatherHtml(item, title, summary) {
   + (summary ? '<p>' + he(summary.label) + '</p>' : '')
   + '<p>每小时降水最高 ' + he(String(rain)) + ' mm · 风速最高 ' + he(String(wind)) + ' km/h'
   + (gusts.length ? ' · 阵风最高 ' + he(String(Math.max(...gusts))) + ' km/h' : ' · 阵风未提供') + '</p>'
-  + '<p class="di-help">' + he(data.source + ' · 查询于 ' + diTime(data.fetched_at)) + '</p>'
-  + diSourceLink(data.source_url, '天气来源') + '</article>';
+  + '<p class="di-help">' + he(data.source + ' · 查询于 ' + diTime(data.fetched_at)) + '</p></article>';
 }
 
 function diPreviousHtml(previous) {
