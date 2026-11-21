@@ -1,12 +1,18 @@
 # ✈️ ticket-monitoring 机票监控
 
+[简体中文](README.md) · [English](README_EN.md) · [Español](README.es.md) · [日本語](README.ja.md)
+
+此仓库 fork 自 [dengmeiluan/ticket-monitoring](https://github.com/dengmeiluan/ticket-monitoring)。以下在线演示与发行包由上游提供，源码命令指向当前 fork。
+
+控制台默认只在本机监听，且没有登录鉴权，请勿暴露到公网。启用通知后，消息会发往你配置的服务；如启用图床，报告图片可通过外部链接访问。详见[数据与凭据边界](SECURITY.md#数据与凭据边界)。
+
 <p align="center">
-  <img src="docs/assets/banner-zh.svg" alt="ticket-monitoring：自托管多渠道机票价格监控，10 渠道 / 7 维度 / 11 条质量轴，数据留在本机" width="100%">
+  <img src="docs/assets/banner-zh.svg" alt="ticket-monitoring：自托管多渠道机票价格监控，10 渠道 / 7 维度 / 11 条质量轴" width="100%">
 </p>
 
 > 自托管的多渠道机票价格监控：航班明细采集 → 钉钉图文推送 → 达标四层强提醒。
 > 国内航线与国际航线（五洲目的地）同一套采集-判定-推送链路。
-> 数据留在本机，配置全在网页，开源免费。
+> 价格记录保存在本机，监控和通知可通过浏览器配置。
 
 [![在线演示](https://img.shields.io/badge/🎪_在线演示-点开即玩-brightgreen)](https://dengmeiluan.github.io/ticket-monitoring/site/)
 [![Release](https://img.shields.io/github/v/release/dengmeiluan/ticket-monitoring?display_name=release)](https://github.com/dengmeiluan/ticket-monitoring/releases)
@@ -32,7 +38,7 @@
 ### Windows（源码，PowerShell）
 
 ```powershell
-git clone https://github.com/dengmeiluan/ticket-monitoring.git
+git clone https://github.com/Hokkaidoooo/ticket-monitoring.git
 cd ticket-monitoring
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
 .\.venv\Scripts\Activate.ps1
@@ -46,7 +52,7 @@ python main.py          # 前台；后台：.\start.ps1（停止：.\stop.ps1）
 ### macOS / Linux（源码）
 
 ```bash
-git clone https://github.com/dengmeiluan/ticket-monitoring.git
+git clone https://github.com/Hokkaidoooo/ticket-monitoring.git
 cd ticket-monitoring
 bash setup.sh
 source .venv/bin/activate

@@ -1,14 +1,20 @@
 # ✈️ ticket-monitoring
 
+[简体中文](README.md) · [English](README_EN.md) · [Español](README.es.md) · [日本語](README.ja.md)
+
+This is a fork of [dengmeiluan/ticket-monitoring](https://github.com/dengmeiluan/ticket-monitoring). The demo and release downloads below are provided by upstream; the source install commands clone this fork.
+
+The console listens on loopback by default and has no built-in authentication. Do not expose it to the public internet. Notifications go to the services you configure; if you enable image hosting, report images can be reached through external links. See the [security policy](SECURITY.md).
+
 <p align="center">
-  <img src="docs/assets/banner-en.svg" alt="ticket-monitoring: self-hosted multi-channel flight fare monitoring, 10 channels / 7 dimensions / 11 quality axes, data stays on your machine" width="100%">
+  <img src="docs/assets/banner-en.svg" alt="ticket-monitoring: self-hosted multi-channel flight fare monitoring, 10 channels / 7 dimensions / 11 quality axes" width="100%">
 </p>
 
 > Self-hosted multi-channel flight price monitoring: fare collection →
 > rich DingTalk group reports → 4-layer urgent alerts when your target price hits.
 > Domestic and international routes (destinations across five continents) run
 > through the same collection → judging → push pipeline.
-> Your data stays on your machine. Everything is configured in the browser. Free & open source.
+> Fare history is stored locally. Configure monitoring and notifications in the browser.
 
 [![Live Demo](https://img.shields.io/badge/🎪_Live_Demo-click_to_play-brightgreen)](https://dengmeiluan.github.io/ticket-monitoring/site/)
 [![Release](https://img.shields.io/github/v/release/dengmeiluan/ticket-monitoring?display_name=release)](https://github.com/dengmeiluan/ticket-monitoring/releases)
@@ -36,7 +42,7 @@ Supported OS: Windows 10/11 x64, macOS 12+ (Intel / Apple silicon), mainstream x
 ### Windows (source, PowerShell)
 
 ```powershell
-git clone https://github.com/dengmeiluan/ticket-monitoring.git
+git clone https://github.com/Hokkaidoooo/ticket-monitoring.git
 cd ticket-monitoring
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
 .\.venv\Scripts\Activate.ps1
@@ -50,7 +56,7 @@ python main.py          # foreground; background: .\start.ps1 (stop: .\stop.ps1)
 ### macOS / Linux (source)
 
 ```bash
-git clone https://github.com/dengmeiluan/ticket-monitoring.git
+git clone https://github.com/Hokkaidoooo/ticket-monitoring.git
 cd ticket-monitoring
 bash setup.sh
 source .venv/bin/activate
