@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""发版漂移体检：一条命令看清"仓库现在到底遵不遵守发版规范"。
-
-为什么要有它（2026-11-16 的实况）：`main` 上叠了 6 笔提交、Pages 部署堆到 7 条、
-Release 停在 `229a947` 而 HEAD 已经走到 `69364a0`——对外三个入口（仓库首页、
-Deployments、Release）互相矛盾，但**没有任何东西会报错**：CI 照样绿，因为 CI 只跑
-测试，不校验"公开发布形态"。于是漂移只能靠人肉发现。
+"""校验源码历史、贡献者署名与发布资料的一致性。
 
 判据（与 `docs/RELEASE_PROCESS.md` 一一对应）：
 
 | 项 | 要求 | 谁受害 |
 |---|---|---|
-| 单一 root commit | `git rev-list --count HEAD == 1` | 公开历史可信度、Release 的"1 commit"标注 |
+| 历史策略 | 完整历史、单一 root、禁 merge；fork 保留基线，上游遵循收尾排列 | 上游代码与贡献者作者溯源 |
 | 工作树干净 | 无未提交改动 | 资产与源码可能不同批 |
 | 站点构建戳 | 本地烘焙戳 == 运行时口径 | 在线演示与源码不符 |
 | README 计数 | 与 `pytest --collect-only` 一致 | 门禁假红/假绿 |
@@ -56,7 +51,7 @@ _CWD = {"repo": ROOT}
 
 def sh(*args):
     return subprocess.run(args, cwd=_CWD["repo"], capture_output=True, text=True,
-                          encoding="utf-8", errors="replace").stdout.strip()
+                          encoding="utf-8", errors="replace", check=True).stdout.strip()
 
 
 def version():
@@ -69,24 +64,52 @@ def version():
 
 
 # ------------------------------------------------------------------ 本地项
+def history_policy():
+    """缺少配置时沿用上游发版形态；fork 必须显式指定完整基线提交。"""
+    path = os.path.join(_CWD["repo"], ".github", "history-policy.json")
+    if not os.path.exists(path):
+        return {"mode": "upstream"}
+    with open(path, encoding="utf-8") as source:
+        policy = json.load(source)
+    if policy == {"mode": "upstream"}:
+        return policy
+    if not isinstance(policy, dict) or set(policy) != {"mode", "base_commit"}:
+        raise ValueError("历史策略须为 upstream，或含 base_commit 的 fork 配置")
+    if policy["mode"] != "fork" or not isinstance(policy["base_commit"], str):
+        raise ValueError("历史策略的模式或基线类型无效")
+    if not re.fullmatch(r"[0-9a-f]{40}", policy["base_commit"]):
+        raise ValueError("fork 基线必须是完整的 40 位提交 SHA")
+    return policy
+
+
+def fork_history(base_commit):
+    """完整提交祖先关系保留上游代码及作者，允许其后的线性开发。"""
+    if sh("git", "cat-file", "-t", base_commit) != "commit":
+        return False, "fork 基线不是提交对象"
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", base_commit, "HEAD"],
+        cwd=_CWD["repo"], capture_output=True, text=True, encoding="utf-8")
+    if result.returncode == 1:
+        return False, "fork 基线 %s 不在 HEAD 的祖先中" % base_commit
+    result.check_returncode()
+    count = sh("git", "rev-list", "--count", base_commit + "..HEAD")
+    return True, "root=1, fork 基线 %s, 后续提交 %s 笔" % (base_commit, count)
+
+
 def history_shape():
-    """公开历史形态（规范 v2，2026-11-18）：返回 (ok, 明细字符串)。
-
-        root（维护者）
-        ├─ 外部贡献提交 × N   作者=贡献者本人（GitHub Contributors 只认 author）
-        └─ 维护者收尾提交 × 0..1，且必须是最后一笔
-        禁止 merge 提交
-
-    为什么不是"单一 root commit"：那样只能靠 Co-authored-by 记名，而 GitHub 的
-    contributors 列表不认 co-author（实测）。要让贡献者真正出现在列表里，
-    main 上必须有一笔以他为 author 的提交。
-    """
+    """共用完整历史与线性约束，再按配置校验基线或上游收尾排列。"""
+    policy = history_policy()
+    if sh("git", "rev-parse", "--is-shallow-repository") == "true":
+        return False, "需要完整历史；请先执行 git fetch --unshallow"
     root = sh("git", "rev-list", "--max-parents=0", "HEAD").splitlines()
     if len(root) != 1:
         return False, "root 提交数为 %d（必须恰好 1）" % len(root)
     merges = sh("git", "rev-list", "--merges", "HEAD").splitlines()
     if merges:
         return False, "存在 merge 提交：%s" % ", ".join(m[:7] for m in merges[:3])
+
+    if policy["mode"] == "fork":
+        return fork_history(policy["base_commit"])
 
     root_author = sh("git", "log", "-1", "--format=%an <%ae>", root[0])
     commits = sh("git", "log", "--format=%H%x09%an <%ae>", "HEAD").splitlines()
@@ -110,7 +133,7 @@ def history_shape():
 
 def check_history():
     ok, detail = history_shape()
-    return row("history shape: root + foreign + one closing commit", ok, detail)
+    return row("history policy", ok, detail)
 
 
 def check_contributors():
@@ -224,6 +247,16 @@ HINT = """
 细节见 docs/RELEASE_PROCESS.md「发版漂移自检与收敛」。
 """
 
+FORK_HINT = """
+检查 .github/history-policy.json 中的基线是否完整且属于 HEAD 的祖先，
+并确认没有 merge 提交。上游贡献者的提交与作者由祖先关系保留。
+工作树、版本说明、构建戳与发布资产仍须分别通过检查。
+"""
+
+
+def recovery_hint():
+    return FORK_HINT if history_policy()["mode"] == "fork" else HINT
+
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="发版漂移体检")
@@ -262,7 +295,7 @@ def main(argv=None):
     if bad:
         print("漂移项：%s" % "；".join(r["check"] for r in bad), flush=True)
         if a.hint:
-            print(HINT, flush=True)
+            print(recovery_hint(), flush=True)
 
     if a.issue_body:
         lines = ["<!-- release-drift-report -->",
@@ -274,7 +307,7 @@ def main(argv=None):
                          % (r["check"], "✅" if r["ok"] else "❌",
                             r["detail"].replace("|", "\\|")))
         if bad:
-            lines += ["", "## 收敛步骤", "```", HINT.strip(), "```"]
+            lines += ["", "## 修复检查", "```", recovery_hint().strip(), "```"]
         open(a.issue_body, "w", encoding="utf-8", newline="\n").write(
             "\n".join(lines) + "\n")
         print("issue 正文已写：%s" % a.issue_body, flush=True)
@@ -285,4 +318,10 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        print("发版检查无法完成：%s" % error, file=sys.stderr)
+        if isinstance(error, subprocess.CalledProcessError) and error.stderr:
+            print(error.stderr.strip(), file=sys.stderr)
+        sys.exit(2)

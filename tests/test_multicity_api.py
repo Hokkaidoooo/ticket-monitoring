@@ -6,6 +6,7 @@ import sqlite3
 import sys
 import threading
 import urllib.request
+from datetime import timedelta
 
 import pytest
 
@@ -13,8 +14,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 import webui  # noqa: E402
-from core.multicity import build_mc_extra, segments_key  # noqa: E402
+from core.multicity import segments_key  # noqa: E402
 from core.storage import PriceStorage  # noqa: E402
+from support_test_clock import MULTICITY_NOW, freeze_webui_clock  # noqa: E402
 
 SEGS_A = [{"from": "SHA", "to": "TYO", "date": "2026-11-20"},
           {"from": "TYO", "to": "OSA", "date": "2026-11-23"}]
@@ -134,9 +136,12 @@ def test_endpoint_serves_filtered_payload(live_server):
     assert hist["items"][0]["history"][0][1] == 1298.0
 
 
-def test_user_state_exposes_mc_latest_without_fake_od(tmp_path):
+def test_user_state_exposes_mc_latest_without_fake_od(tmp_path, monkeypatch):
+    freeze_webui_clock(monkeypatch, MULTICITY_NOW)
     db = _make_db(tmp_path)
-    webui._State.cfg = {"output": {"db_path": db}, "schedule": {}}
+    monkeypatch.setattr(webui, "DEMO", {"on": False})
+    monkeypatch.setattr(webui._State, "cfg",
+                        {"output": {"db_path": db}, "schedule": {}})
     users = [{
         "name": "u", "platforms": ["ctrip"],
         "routes": [
@@ -157,6 +162,11 @@ def test_user_state_exposes_mc_latest_without_fake_od(tmp_path):
     assert mc[0]["supported"] is True and mc[0]["expired"] is False
     assert [x["flight_no"] for x in mc[0]["latest"]["legs"]] == [
         "9C8515", "MM304"]
+
+    freeze_webui_clock(monkeypatch, MULTICITY_NOW + timedelta(days=2))
+    expired = webui._user_state(users[0])["mcRoutes"][0]
+    assert expired["key"] == mc[0]["key"]
+    assert expired["supported"] is True and expired["expired"] is True
 
     only_mc = {"name": "u", "platforms": ["qunar"], "routes": [
         {"from": "SHA", "to": "OSA", "dates": ["2020-01-01"],
@@ -231,7 +241,7 @@ def test_config_post_round_trips_multicity(config_server):
         "name": "u", "platforms": ["ctrip"],
         "routes": [{"from": "", "to": "", "dates": [],
                     "alert_threshold": 1500, "segments": SEGS_A}]}],
-        "globals": {}}
+               "globals": {}}
     code, out = _post(base, payload)
     assert code == 200 and out.get("ok"), out
     saved = yaml.safe_load(io.open(cfg_path, encoding="utf-8"))

@@ -1,5 +1,13 @@
 # Public UI Release & Alignment Process
 
+## Fork history policy
+
+This fork preserves upstream commit `5bd64349d2394670e429e741f3e75aa176cf64fb` and adds ordinary linear commits. `.github/history-policy.json` selects the `fork` policy and records that full commit ID. `tools/release_guard.py` verifies a complete clone, one root, no merge commits, and that the recorded baseline is an ancestor of `HEAD`. Contributor attribution, clean working tree, release notes and site stamps remain separate checks. Missing objects, malformed configuration and Git command failures fail visibly.
+
+Use `python tools/release_guard.py --offline --no-collect` for local source checks. Both the CI job and the optional pre-push hook call the same history validator. `git config core.hooksPath .githooks` enables the hook. `tools/converge_history.py` refuses to rewrite history while the fork policy is selected.
+
+The upstream release cadence below applies to upstream distribution artifacts. A source-only fork update does not replace upstream releases, tags or deployments. To select the upstream history policy explicitly, set the configuration to `{"mode": "upstream"}`; omitting the configuration has the same documented meaning. Invalid configurations never bypass checks.
+
 This is the fixed cadence for every UI/design wave and every public release. It exists so README, screenshots, Release notes, package assets and commit history always tell one story.
 
 ## 1. Canonical copy (single source of truth)

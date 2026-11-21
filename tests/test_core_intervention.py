@@ -1,111 +1,104 @@
 # -*- coding: utf-8 -*-
-"""由轮号钉归并生成的模块（tests/ 归并工程，映射见 _scratch/w2a_mapping.json）。
+"""干预台账、统计口径与面板读数的回归测试。"""
 
-本文件按主题收拢下列源文件，测试函数名与原实现逐字保留：
-- tests/test_r484_intervention_success_rate.py
-- tests/test_r506_intervention_unjudged.py
-- tests/test_r611_intervention_heal_window_capped.py
-- tests/test_r612_intervention_write_failure_is_visible.py
-- tests/test_r617_intervention_scope_is_scoped.py
-- tests/test_r618_intervention_trend_follows_scope.py
+import os
+import sqlite3
+from contextlib import closing
+from datetime import datetime, timedelta
 
-合并约定：import 区去重合并；每个源文件的模块级语句、辅助函数、
-fixture 以 `# ---- merged from ... ----` 分段原样保留；
-`if __name__ == "__main__"` 块移至文件尾。
-"""
+import pytest
 from support_webui_src import webui_full_src
 
-import datetime as dt
-import os
-import sys
-import tempfile
-
 from core.storage import PriceStorage
-from datetime import datetime, timedelta
+
+
+@pytest.fixture
+def make_storage(tmp_path):
+    def make(name="prices.db"):
+        return PriceStorage(str(tmp_path / name))
+
+    return make
+
+
+@pytest.fixture
+def at():
+    """同一用例的时间戳共用 SQLite 本地统计时钟的一次采样。"""
+    with closing(sqlite3.connect(":memory:")) as conn:
+        (timestamp,) = conn.execute("SELECT datetime('now','localtime')").fetchone()
+    now = datetime.fromisoformat(timestamp)
+
+    def minutes_before_now(minutes_ago):
+        return (now - timedelta(minutes=minutes_ago)).isoformat(sep=" ")
+
+    return minutes_before_now
+
+
+def _row(st, platform, status, at, route=("BKK", "CAN")):
+    depart_date = datetime.fromisoformat(at).date().isoformat()
+    with st._conn() as c:
+        c.execute(
+            "INSERT INTO fetch_paths (fetched_at,platform,from_city,"
+            "to_city,depart_date,entry_path,path_status) "
+            "VALUES (?,?,?,?,?,'H5',?)",
+            (at, platform, *route, depart_date, status))
 
 
 # ---- merged from tests/test_r484_intervention_success_rate.py ----
 
-def _ps():
-    return PriceStorage(os.path.join(tempfile.mkdtemp(), "t.db"))
-
-
-def _at(minutes_ago):
-    return (datetime.now() - timedelta(minutes=minutes_ago)).strftime(
-        "%Y-%m-%d %H:%M:%S")
-
-
-def _row(ps, plat, status, at):
-    with ps._conn() as c:
-        c.execute(
-            "INSERT INTO fetch_paths (fetched_at,platform,from_city,"
-            "to_city,depart_date,entry_path,path_status) "
-            "VALUES (?,'%s','BKK','CAN','2026-11-05','H5',?)" % plat,
-            (at, status))
-
-
-def test_healed_when_output_appears_in_window():
-    ps = _ps()
-    ps.save_intervention("fliggy", "probe", ok=True, at=_at(120))
-    _row(ps, "fliggy", "ok", _at(110))
+def test_healed_when_output_appears_in_window(make_storage, at):
+    ps = make_storage()
+    ps.save_intervention("fliggy", "probe", ok=True, at=at(120))
+    _row(ps, "fliggy", "ok", at(110))
     r = ps.intervention_success_rate()
     assert r["probe"]["n"] == 1 and r["probe"]["healed"] == 1, r
     assert r["probe"]["rate"] == 1.0
 
 
-def test_unhealed_when_only_failures_in_window():
-    ps = _ps()
-    ps.save_intervention("fliggy", "warmup", ok=True, at=_at(120))
-    _row(ps, "fliggy", "login", _at(110))
-    _row(ps, "fliggy", "error", _at(100))
+def test_unhealed_when_only_failures_in_window(make_storage, at):
+    ps = make_storage()
+    ps.save_intervention("fliggy", "warmup", ok=True, at=at(120))
+    _row(ps, "fliggy", "login", at(110))
+    _row(ps, "fliggy", "error", at(100))
     r = ps.intervention_success_rate()
     assert r["warmup"]["n"] == 1 and r["warmup"]["unhealed"] == 1, r
     assert r["warmup"]["rate"] == 0.0, "窗口内全是失败必须计为无效"
 
 
-def test_pending_window_is_excluded_not_counted_as_failure():
-    """干预刚做完还没采集：不可判断，不能拉低成功率。
-
-    r506 起这类窗口不再整条消失，而是记进 `unjudged`；**分母口径不变**
-    （n 仍为 0、rate 仍为 None），所以这里断言的是「没被算成失败」，
-    而不是「不出现在结果里」。
-    """
-    ps = _ps()
-    ps.save_intervention("fliggy", "verify", ok=True, at=_at(2))
-    r = ps.intervention_success_rate()
-    d = r.get("verify") or {}
-    assert d.get("unhealed", 0) == 0, "无样本窗口被算成了失败：%r" % (r,)
-    assert d.get("n", 0) == 0, "无样本的窗口被算进了分母：%r" % (r,)
-    assert d.get("rate") is None, "无样本却给出比率：%r" % (r,)
+def test_pending_window_is_excluded_not_counted_as_failure(make_storage, at):
+    """没有采集样本的窗口记为待判，不计入成功率分母。"""
+    ps = make_storage()
+    ps.save_intervention("fliggy", "verify", ok=True, at=at(2))
+    d = ps.intervention_success_rate()["verify"]
+    assert (d["unjudged"], d["unhealed"], d["n"], d["rate"]) == (1, 0, 0, None), d
 
 
-def test_window_ends_at_next_manual_intervention():
+def test_window_ends_at_next_manual_intervention(make_storage, at):
     """后一次干预之后的成功，不能算到前一次头上。"""
-    ps = _ps()
-    ps.save_intervention("fliggy", "probe", ok=True, at=_at(120))
-    ps.save_intervention("fliggy", "warmup", ok=True, at=_at(60))
-    _row(ps, "fliggy", "login", _at(90))  # 落在 probe 的窗口（且是失败）
-    _row(ps, "fliggy", "ok", _at(50))     # 落在 warmup 的窗口
+    ps = make_storage()
+    ps.save_intervention("fliggy", "probe", ok=True, at=at(120))
+    ps.save_intervention("fliggy", "warmup", ok=True, at=at(60))
+    _row(ps, "fliggy", "login", at(90))  # 落在 probe 的窗口（且是失败）
+    _row(ps, "fliggy", "ok", at(50))     # 落在 warmup 的窗口
     r = ps.intervention_success_rate()
     assert r["probe"]["unhealed"] == 1, r
     assert r["warmup"]["healed"] == 1, r
 
 
-def test_auto_events_are_excluded():
-    ps = _ps()
-    ps.save_intervention("fliggy", "auto_trip", ok=False, at=_at(120))
-    _row(ps, "fliggy", "ok", _at(110))
+def test_auto_events_are_excluded(make_storage, at):
+    ps = make_storage()
+    ps.save_intervention("fliggy", "auto_trip", ok=False, at=at(120))
+    _row(ps, "fliggy", "ok", at(110))
     r = ps.intervention_success_rate()
     assert "auto_trip" not in r, "自动事件混进了人工干预成功率：%r" % (r,)
 
 
-def test_rate_per_action_can_be_compared():
+def test_rate_per_action_can_be_compared(make_storage, at):
     """同一动作多次：3 次有效 1 次无效 → 75%，不同动作各自独立。"""
-    ps = _ps()
+    ps = make_storage()
     for i, ok in enumerate([True, True, True, False]):
-        at = _at(200 - i * 30)
-        ps.save_intervention("ctrip", "probe", ok=ok, at=at)
-        _row(ps, "ctrip", "ok" if ok else "error", at)
+        timestamp = at(200 - i * 30)
+        ps.save_intervention("ctrip", "probe", ok=ok, at=timestamp)
+        _row(ps, "ctrip", "ok" if ok else "error", timestamp)
     r = ps.intervention_success_rate()
     assert r["probe"]["n"] == 4 and r["probe"]["healed"] == 3, r
     assert r["probe"]["rate"] == 0.75
@@ -136,24 +129,24 @@ def test_payload_and_panel_expose_the_rate():
     assert "+(_ivRate[0]?" in w, "干预小节未挂上成功率读数"
 
 
-def test_reliability_flag_comes_from_the_backend():
+def test_reliability_flag_comes_from_the_backend(make_storage, at):
     """n=1 的 1.0 与 n=12 的 1.0 不是一回事，API 必须自带可靠性标记。
 
     实测真实库：`reset` 只有 1 次样本却吐出 rate=1.0。面板会写「样本不足」，
     但任何直接消费 API 的脚本/推送都会把这个 1.0 当真。可靠性判据只能有
     一处（后端），前端不得再自己写一遍 n>=3。
     """
-    ps = _ps()
-    ps.save_intervention("ctrip", "reset", ok=True, at=_at(120))
-    _row(ps, "ctrip", "ok", _at(110))
+    ps = make_storage()
+    ps.save_intervention("ctrip", "reset", ok=True, at=at(120))
+    _row(ps, "ctrip", "ok", at(110))
     r = ps.intervention_success_rate()
     assert r["reset"]["reliable"] is False, "单样本被标成可靠：%r" % (r,)
 
-    ps2 = _ps()
+    ps2 = make_storage("reliable.db")
     for i in range(3):
-        at = _at(200 - i * 30)
-        ps2.save_intervention("ctrip", "probe", ok=True, at=at)
-        _row(ps2, "ctrip", "ok", at)
+        timestamp = at(200 - i * 30)
+        ps2.save_intervention("ctrip", "probe", ok=True, at=timestamp)
+        _row(ps2, "ctrip", "ok", timestamp)
     r2 = ps2.intervention_success_rate()
     assert r2["probe"]["reliable"] is True, r2
 
@@ -166,31 +159,10 @@ def test_reliability_flag_comes_from_the_backend():
 
 # ---- merged from tests/test_r506_intervention_unjudged.py ----
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
-def _ps():
-    return PriceStorage(os.path.join(tempfile.mkdtemp(), "t.db"))
-
-
-def _at(minutes_ago):
-    return (datetime.now() - timedelta(minutes=minutes_ago)).strftime(
-        "%Y-%m-%d %H:%M:%S")
-
-
-def _row(ps, plat, status, at):
-    with ps._conn() as c:
-        c.execute(
-            "INSERT INTO fetch_paths (fetched_at,platform,from_city,"
-            "to_city,depart_date,entry_path,path_status) "
-            "VALUES (?,'%s','BKK','CAN','2026-11-05','H5',?)" % plat,
-            (at, status))
-
-
-def test_unjudged_window_is_reported_not_dropped():
+def test_unjudged_window_is_reported_not_dropped(make_storage, at):
     """没有任何采集样本的动作必须仍然出现，并标明是「判不了」。"""
-    ps = _ps()
-    ps.save_intervention("fliggy", "relogin", ok=True, at=_at(30))
+    ps = make_storage()
+    ps.save_intervention("fliggy", "relogin", ok=True, at=at(30))
     r = ps.intervention_success_rate()
     assert "relogin" in r, \
         "重登被整条丢掉了——「没按过」与「判不了」无法区分：%r" % (r,)
@@ -201,23 +173,23 @@ def test_unjudged_window_is_reported_not_dropped():
     assert d["reliable"] is False, "无样本被标成可靠：%r" % (d,)
 
 
-def test_unjudged_does_not_move_the_rate():
+def test_unjudged_does_not_move_the_rate(make_storage, at):
     """混入判不了的窗口，不能让已判样本的成功率漂移。"""
-    ps = _ps()
-    ps.save_intervention("ctrip", "probe", ok=True, at=_at(300))
-    _row(ps, "ctrip", "ok", _at(290))
-    ps.save_intervention("fliggy", "relogin", ok=True, at=_at(30))
+    ps = make_storage()
+    ps.save_intervention("ctrip", "probe", ok=True, at=at(300))
+    _row(ps, "ctrip", "ok", at(290))
+    ps.save_intervention("fliggy", "relogin", ok=True, at=at(30))
     r = ps.intervention_success_rate()
     assert r["probe"]["n"] == 1 and r["probe"]["rate"] == 1.0, r
     assert r["relogin"]["n"] == 0 and r["relogin"]["rate"] is None, r
 
 
-def test_judged_and_unjudged_coexist_on_one_action():
+def test_judged_and_unjudged_coexist_on_one_action(make_storage, at):
     """同一动作：早先的窗口判得了，最近一次还没采集 → 两数各自独立。"""
-    ps = _ps()
-    ps.save_intervention("fliggy", "relogin", ok=True, at=_at(300))
-    _row(ps, "fliggy", "ok", _at(290))
-    ps.save_intervention("fliggy", "relogin", ok=True, at=_at(10))
+    ps = make_storage()
+    ps.save_intervention("fliggy", "relogin", ok=True, at=at(300))
+    _row(ps, "fliggy", "ok", at(290))
+    ps.save_intervention("fliggy", "relogin", ok=True, at=at(10))
     r = ps.intervention_success_rate()
     d = r["relogin"]
     assert d["n"] == 1 and d["healed"] == 1, \
@@ -258,119 +230,52 @@ def test_pacing_payload_shape_is_unchanged_for_consumers():
 
 # ---- merged from tests/test_r611_intervention_heal_window_capped.py ----
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+def test_far_future_success_does_not_heal_the_intervention(make_storage, at):
+    """仍在回看范围内的干预，不计入其 24 小时观察窗以外的成功。"""
+    st = make_storage()
+    st.save_intervention("ctrip", "warmup", at=at(12 * 60))
+    _row(st, "ctrip", "fail", at(11 * 60))
+    # 回看跨度与观察窗长度相同，须用未来时间戳才能跨过观察窗右界。
+    _row(st, "ctrip", "ok", at(-13 * 60))
+
+    d = st.intervention_success_rate(hours=24)["warmup"]
+    assert (d["n"], d["healed"], d["unhealed"]) == (1, 0, 1), d
 
 
-def _fixture(*, fail_after=10, later_ok=True, days_later=20):
-    """造一次 10 天前的干预：之后 N 小时全失败，远期（days_later）偶然成功。"""
-    from core.storage import PriceStorage
-    db = os.path.join(tempfile.mkdtemp(), "sr.db")
-    st = PriceStorage(db)
-    now = dt.datetime.now().replace(microsecond=0)
-    st.save_intervention("ctrip", "warmup", before="fail", after="")
-    t0 = now - dt.timedelta(days=10)
-    with st._conn() as c:
-        c.execute("UPDATE interventions SET at=?",
-                  (t0.strftime("%Y-%m-%d %H:%M:%S"),))
-        rows = [("fail", t0 + dt.timedelta(hours=i + 1))
-                for i in range(fail_after)]
-        if later_ok:
-            rows.append(("ok", now - dt.timedelta(days=days_later)))
-        for s, at in rows:
-            c.execute(
-                "INSERT INTO fetch_paths(platform,entry_path,path_status,"
-                "from_city,to_city,depart_date,fetched_at) VALUES(?,?,?,?,?,?,?)",
-                ("ctrip", "PC", s, "SHA", "BJS", "2026-11-01",
-                 at.strftime("%Y-%m-%d %H:%M:%S")))
-    return st
-
-
-def test_far_future_success_does_not_heal_the_intervention():
-    """干预后 24h 全失败 → 不能因为在 20 天后偶然成功就记 healed。"""
-    st = _fixture(fail_after=10, later_ok=True, days_later=20)
-    d = st.intervention_success_rate(hours=24).get("warmup") or {}
-    assert d.get("healed") != 1, (
-        "远期偶然成功被当成干预生效（healed=%r, rate=%r）"
-        % (d.get("healed"), d.get("rate")))
-
-
-def test_immediate_success_still_counts():
+def test_immediate_success_still_counts(make_storage, at):
     """真在窗口内恢复的仍必须算 healed——收紧窗口不能把好的也判没。"""
-    from core.storage import PriceStorage
-    db = os.path.join(tempfile.mkdtemp(), "ok.db")
-    st = PriceStorage(db)
-    now = dt.datetime.now().replace(microsecond=0)
-    st.save_intervention("ctrip", "warmup", before="fail", after="")
-    t0 = now - dt.timedelta(hours=3)
-    with st._conn() as c:
-        c.execute("UPDATE interventions SET at=?",
-                  (t0.strftime("%Y-%m-%d %H:%M:%S"),))
-        c.execute(
-            "INSERT INTO fetch_paths(platform,entry_path,path_status,"
-            "from_city,to_city,depart_date,fetched_at) VALUES(?,?,?,?,?,?,?)",
-            ("ctrip", "PC", "ok", "SHA", "BJS", "2026-11-01",
-             (t0 + dt.timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")))
-    d = st.intervention_success_rate(hours=24).get("warmup") or {}
-    assert d.get("healed") == 1 and d.get("n") == 1, d
+    st = make_storage()
+    st.save_intervention("ctrip", "warmup", at=at(180))
+    _row(st, "ctrip", "ok", at(150))
+    d = st.intervention_success_rate(hours=24)["warmup"]
+    assert d["healed"] == 1 and d["n"] == 1, d
 
 
-def test_next_intervention_still_closes_the_window():
+def test_next_intervention_still_closes_the_window(make_storage, at):
     """有下一次人工干预时，窗口仍须在那一刻结束（不能被 N 小时拉长）。"""
-    from core.storage import PriceStorage
-    db = os.path.join(tempfile.mkdtemp(), "nxt.db")
-    st = PriceStorage(db)
-    now = dt.datetime.now().replace(microsecond=0)
-    st.save_intervention("ctrip", "warmup", before="fail", after="")
-    st.save_intervention("ctrip", "verify", before="fail", after="")
-    with st._conn() as c:
-        marks = list(c.execute(
-            "SELECT id, at FROM interventions ORDER BY id").fetchall())
-        t0 = now - dt.timedelta(hours=6)
-        t1 = now - dt.timedelta(hours=2)
-        c.execute("UPDATE interventions SET at=? WHERE id=?",
-                  (t0.strftime("%Y-%m-%d %H:%M:%S"), marks[0]["id"]))
-        c.execute("UPDATE interventions SET at=? WHERE id=?",
-                  (t1.strftime("%Y-%m-%d %H:%M:%S"), marks[1]["id"]))
-        # 成功时刻在两次干预之间 → 属于第一次干预；在第二次之后再说
-        c.execute(
-            "INSERT INTO fetch_paths(platform,entry_path,path_status,"
-            "from_city,to_city,depart_date,fetched_at) VALUES(?,?,?,?,?,?,?)",
-            ("ctrip", "PC", "ok", "SHA", "BJS", "2026-11-01",
-             (t0 + dt.timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")))
-        c.execute(
-            "INSERT INTO fetch_paths(platform,entry_path,path_status,"
-            "from_city,to_city,depart_date,fetched_at) VALUES(?,?,?,?,?,?,?)",
-            ("ctrip", "PC", "ok", "SHA", "BJS", "2026-11-01",
-             (t1 + dt.timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")))
+    st = make_storage()
+    st.save_intervention("ctrip", "warmup", at=at(360))
+    st.save_intervention("ctrip", "verify", at=at(120))
+    _row(st, "ctrip", "fail", at(300))
+    _row(st, "ctrip", "ok", at(120))  # 成功恰在两窗交界，只归第二次。
     r = st.intervention_success_rate(hours=24)
-    assert (r.get("warmup") or {}).get("healed") == 1, r
-    assert (r.get("verify") or {}).get("healed") == 1, r
+    assert r["warmup"]["unhealed"] == 1, r
+    assert r["verify"]["healed"] == 1, r
 
 
 # ---- merged from tests/test_r612_intervention_write_failure_is_visible.py ----
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
-
-
-def _storage():
-    from core.storage import PriceStorage
-    db = os.path.join(tempfile.mkdtemp(), "iv.db")
-    return PriceStorage(db), db
-
-
-def test_successful_write_returns_true():
-    st, _ = _storage()
+def test_successful_write_returns_true(make_storage):
+    st = make_storage()
     assert st.save_intervention("ctrip", "warmup") is True
 
 
-def test_failed_write_logs_and_still_raises(caplog):
+def test_failed_write_logs_and_still_raises(make_storage, caplog):
     """失败必须 ① 留日志 ② 仍抛异常（调用方的 try/except 语义不变）。"""
     import logging
-    st, db = _storage()
+    st = make_storage()
     st.save_intervention("ctrip", "warmup")
-    os.chmod(db, 0o444)
+    os.chmod(st.db_path, 0o444)
     raised = False
     with caplog.at_level(logging.WARNING):
         try:
@@ -386,12 +291,12 @@ def test_failed_write_logs_and_still_raises(caplog):
         "写入失败没有留下可检索的告警：%r" % txt)
 
 
-def test_rollback_does_not_leave_partial_rows():
+def test_rollback_does_not_leave_partial_rows(make_storage):
     """失败后不得留下半条记录（溯源里不能出现「有干预无内容」的行）。"""
-    st, db = _storage()
+    st = make_storage()
     st.save_intervention("ctrip", "warmup")
     before = len(st.interventions(platform="ctrip", limit=50))
-    os.chmod(db, 0o444)
+    os.chmod(st.db_path, 0o444)
     try:
         st.save_intervention("ctrip", "verify")
     except Exception:
@@ -402,49 +307,24 @@ def test_rollback_does_not_leave_partial_rows():
 
 # ---- merged from tests/test_r617_intervention_scope_is_scoped.py ----
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-def _fresh(tmp):
-    return PriceStorage(os.path.join(tmp, "prices.db"))
-
-
-def _add_sample(st, at, plat, frm, to, status):
-    with st._conn() as c:
-        c.execute(
-            "INSERT INTO fetch_paths (fetched_at, platform, from_city, to_city,"
-            " depart_date, entry_path, path_status, request_url, http_status,"
-            " rows, note, evidence_level, attempt_id) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (at, plat, frm, to, "2026-11-20", "P1", status, "u", 200,
-             1 if status in ("ok", "calendar") else 0, "", "detail",
-             at + plat + frm + status))
-
-
-def test_each_scope_is_judged_on_its_own_samples():
-    tmp = tempfile.mkdtemp()
-    st = _fresh(tmp)
+def test_each_scope_is_judged_on_its_own_samples(make_storage, at):
+    st = make_storage()
     plat = "ctrip"
-    _add_sample(st, "2026-10-20 10:00:00", plat, "SHA", "PEK", "fail")
+    _row(st, plat, "fail", at(240), ("SHA", "PEK"))
     # 国际自检窗口：国际全失败，但同一个窗口里国内有成功。
     # 这正是「拿国内的绿灯给国际背书」的形态——不过滤就会判成治好。
-    st.save_intervention(plat, "verify", ok=True, scope="intl",
-                         at="2026-10-20 11:00:00")
+    st.save_intervention(plat, "verify", ok=True, scope="intl", at=at(180))
     for i in range(4):
-        _add_sample(st, "2026-10-20 11:%02d:00" % (10 + i),
-                    plat, "SHA", "NRT", "fail")
+        _row(st, plat, "fail", at(170 - i), ("SHA", "NRT"))
     for i in range(4):
-        _add_sample(st, "2026-10-20 11:%02d:00" % (30 + i),
-                    plat, "SHA", "PEK", "ok")
+        _row(st, plat, "ok", at(150 - i), ("SHA", "PEK"))
     # 国内自检窗口：只有国内样本，全成功
-    st.save_intervention(plat, "verify", ok=True, scope="dom",
-                         at="2026-10-20 12:00:00")
+    st.save_intervention(plat, "verify", ok=True, scope="dom", at=at(120))
     for i in range(4):
-        _add_sample(st, "2026-10-20 12:%02d:00" % (10 + i),
-                    plat, "SHA", "PEK", "ok")
+        _row(st, plat, "ok", at(110 - i), ("SHA", "PEK"))
 
-    got = st.intervention_success_rate(hours=24 * 30)
-    d = got.get("verify") or {}
-    sc = d.get("scopes") or {}
+    d = st.intervention_success_rate(hours=24 * 30)["verify"]
+    sc = d["scopes"]
     assert set(sc) == {"intl", "dom"}, "分域子表缺失或串味：%s" % sc
 
     intl, dom = sc["intl"], sc["dom"]
@@ -464,17 +344,15 @@ def test_each_scope_is_judged_on_its_own_samples():
         "动作级口径应保持渠道级（两窗都能见到成功样本 = 2/2）：%s" % d)
 
 
-def test_scope_judged_unknown_when_that_domain_has_no_samples():
+def test_scope_judged_unknown_when_that_domain_has_no_samples(make_storage, at):
     """该域窗口内一条样本都没有 → 判不了，不是「失败」。"""
-    tmp = tempfile.mkdtemp()
-    st = _fresh(tmp)
-    st.save_intervention("ctrip", "verify", ok=True, scope="intl",
-                         at="2026-10-20 11:00:00")
+    st = make_storage()
+    st.save_intervention("ctrip", "verify", ok=True, scope="intl", at=at(180))
     for i in range(3):
-        _add_sample(st, "2026-10-20 11:%02d:00" % (10 + i),
-                    "ctrip", "SHA", "PEK", "ok")
-    got = st.intervention_success_rate(hours=24 * 30)
-    sc = (got.get("verify") or {}).get("scopes") or {}
+        _row(st, "ctrip", "ok", at(170 - i), ("SHA", "PEK"))
+    d = st.intervention_success_rate(hours=24 * 30)["verify"]
+    assert d["n"] == d["healed"] == 1, d
+    sc = d["scopes"]
     assert "intl" in sc, "国际分组整条消失：%s" % sc
     assert sc["intl"]["n"] == 0 and sc["intl"]["unjudged"] == 1, (
         "国际窗内零样本应记 unjudged，不得拿国内的样本冒充：%s" % sc["intl"])
@@ -482,53 +360,31 @@ def test_scope_judged_unknown_when_that_domain_has_no_samples():
         "零样本时 rate 必须是 None（不是 0，也不是 1）：%s" % sc["intl"])
 
 
-def test_non_domain_scope_keeps_channel_level_numbers():
+def test_non_domain_scope_keeps_channel_level_numbers(make_storage, at):
     """非域名的 scope（重登槽位名等）不做域过滤，仍是渠道级口径。"""
-    tmp = tempfile.mkdtemp()
-    st = _fresh(tmp)
-    st.save_intervention("ctrip", "relogin", ok=True, scope="pc",
-                         at="2026-10-20 11:00:00")
-    for i in range(3):
-        _add_sample(st, "2026-10-20 11:%02d:00" % (10 + i),
-                    "ctrip", "SHA", "PEK", "ok")
-    _add_sample(st, "2026-10-20 11:30:00", "ctrip", "SHA", "NRT", "fail")
-    got = st.intervention_success_rate(hours=24 * 30)
-    d = (got.get("relogin") or {})
-    sc = d.get("scopes") or {}
-    assert sc.get("pc", {}).get("n") == d.get("n") == 1, (
-        "非域 scope 应与动作级同口径：scopes=%s / action=%s" % (sc, d))
+    st = make_storage()
+    st.save_intervention("ctrip", "relogin", ok=True, scope="pc", at=at(180))
+    _row(st, "ctrip", "ok", at(170), ("SHA", "PEK"))
+    st.save_intervention("ctrip", "relogin", ok=True, scope="pc", at=at(120))
+    _row(st, "ctrip", "fail", at(110), ("SHA", "NRT"))
+
+    d = st.intervention_success_rate(hours=24 * 30)["relogin"]
+    assert (d["n"], d["healed"], d["unhealed"]) == (2, 1, 1), d
+    assert d["scopes"]["pc"] == {k: v for k, v in d.items() if k != "scopes"}, d
 
 
 # ---- merged from tests/test_r618_intervention_trend_follows_scope.py ----
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-def _at(minutes_ago):
-    return (datetime.now() - timedelta(minutes=minutes_ago)).strftime(
-        "%Y-%m-%d %H:%M:%S")
-
-
-def _add(st, at, plat, pair, status):
-    with st._conn() as c:
-        c.execute(
-            "INSERT INTO fetch_paths (fetched_at, platform, from_city, to_city,"
-            " depart_date, entry_path, path_status) "
-            "VALUES (?,?,?,?,'2026-11-20','P1',?)",
-            (at, plat, pair[0], pair[1], status))
-
-
-def test_trend_follows_the_intervention_domain():
-    tmp = tempfile.mkdtemp()
-    st = PriceStorage(os.path.join(tmp, "t.db"))
+def test_trend_follows_the_intervention_domain(make_storage, at):
+    st = make_storage()
     plat = "ctrip"
     # 基线：干预前国际也不通
-    _add(st, _at(28 * 60), plat, ("SHA", "NRT"), "login")
-    st.save_intervention(plat, "verify", ok=True, scope="intl",
-                         at=_at(60))
+    _row(st, plat, "login", at(28 * 60), ("SHA", "NRT"))
+    st.save_intervention(plat, "verify", ok=True, scope="intl", at=at(60))
     # 干预后的窗口：国内一律成功，国际一律失败
     for m in (50, 20, 5):
-        _add(st, _at(m), plat, ("SHA", "PEK"), "ok")
-        _add(st, _at(m - 1), plat, ("SHA", "NRT"), "login")
+        _row(st, plat, "ok", at(m), ("SHA", "PEK"))
+        _row(st, plat, "login", at(m - 1), ("SHA", "NRT"))
 
     eff = st.intervention_effect(plat, hours=24)
     assert eff.get("has"), eff
@@ -550,38 +406,30 @@ def test_trend_follows_the_intervention_domain():
         "渠道级 after 仍应统计全部样本：%s" % eff)
 
 
-def test_regressed_is_judged_on_the_intervention_domain():
+def test_regressed_is_judged_on_the_intervention_domain(make_storage, at):
     """该域先好后坏 → 判回落；渠道级同期一直有国内的绿灯，不得把它盖掉。"""
-    tmp = tempfile.mkdtemp()
-    st = PriceStorage(os.path.join(tmp, "t.db"))
+    st = make_storage()
     plat = "ctrip"
-    _add(st, _at(28 * 60), plat, ("SHA", "NRT"), "login")
-    st.save_intervention(plat, "verify", ok=True, scope="intl", at=_at(60))
+    _row(st, plat, "login", at(28 * 60), ("SHA", "NRT"))
+    st.save_intervention(plat, "verify", ok=True, scope="intl", at=at(100))
     # 干预后三段互不重叠的 30 分钟桶：通、通、断（国内全程成功）
-    for m, ok in ((55, True), (35, True), (12, False)):
-        _add(st, _at(m), plat, ("SHA", "PEK"), "ok")
-        _add(st, _at(m - 1), plat, ("SHA", "NRT"),
-             "ok" if ok else "login")
+    for m, ok in ((85, True), (55, True), (12, False)):
+        _row(st, plat, "ok", at(m), ("SHA", "PEK"))
+        _row(st, plat, "ok" if ok else "login", at(m - 1), ("SHA", "NRT"))
 
     eff = st.intervention_effect(plat, hours=24)
-    tr = [t for t in (eff.get("trend") or []) if t.get("rate") is not None]
-    assert tr and tr[-1]["rate"] == 0.0, (
-        "末窗国际全失败，趋势末段应为 0：%s" % [t["rate"] for t in tr])
-    assert any(t["rate"] == 1.0 for t in tr[:-1]), (
-        "前两窗国际是通的，趋势里该有 1.0：%s" % [t["rate"] for t in tr])
+    assert [t["rate"] for t in eff["trend"]] == [1.0, 1.0, 0.0], eff
     assert eff.get("regressed") is True, (
         "国际先通后断，应判「最近回落」：%s" % eff)
 
 
-def test_channel_level_trend_stays_when_scope_is_not_a_domain():
+def test_channel_level_trend_stays_when_scope_is_not_a_domain(make_storage, at):
     """非域名 scope（重登槽位等）不改趋势口径。"""
-    tmp = tempfile.mkdtemp()
-    st = PriceStorage(os.path.join(tmp, "t.db"))
-    st.save_intervention("ctrip", "relogin", ok=True, scope="pc",
-                         at=_at(60))
+    st = make_storage()
+    st.save_intervention("ctrip", "relogin", ok=True, scope="pc", at=at(60))
     for m in (50, 20):
-        _add(st, _at(m), "ctrip", ("SHA", "PEK"), "ok")
-        _add(st, _at(m - 1), "ctrip", ("SHA", "NRT"), "login")
+        _row(st, "ctrip", "ok", at(m), ("SHA", "PEK"))
+        _row(st, "ctrip", "login", at(m - 1), ("SHA", "NRT"))
     eff = st.intervention_effect("ctrip", hours=24)
     tr = [t for t in (eff.get("trend") or []) if t.get("rate") is not None]
     assert tr, eff

@@ -9,7 +9,7 @@
 3. 三道防线都在（pre-push 钩子 / guard.yml / drift.yml），且文档里有启用方法；
 4. `tools/converge_history.py` 有演练模式；
 5. 版本说明单源（CHANGELOG）；
-6. **公开历史形状**：本仓库当前就是单一 root commit（这是对外承诺）。
+6. 历史策略：fork 保留上游基线，上游仓遵循贡献提交和收尾排列。
 """
 import io
 import json
@@ -80,9 +80,7 @@ def test_release_guard_runs_offline():
             payload = json.loads(line)
     assert payload is not None, "guard 没收尾输出 JSON 报告"
     names = [row["check"] for row in payload["rows"]]
-    # 规范 v2（2026-11-18）：形态判据从"单一 root commit"改成
-    # "root + 外部贡献提交 + 1 笔收尾提交"（Contributors 只认 author）
-    assert "history shape: root + foreign + one closing commit" in names
+    assert "history policy" in names
     assert "site build stamp current" in names
 
 
@@ -90,7 +88,8 @@ def test_three_defences_are_wired():
     hook = os.path.join(ROOT, ".githooks", "pre-push")
     assert os.path.exists(hook), "缺 .githooks/pre-push"
     h = io.open(hook, encoding="utf-8").read()
-    assert "converge_history" in h, "钩子没告诉人怎么收敛"
+    assert "release_guard.py --offline --no-collect --history-only" in h
+    assert "rev-list --" not in h, "历史规则应由 release_guard 统一实现"
     # 维护者决定：**不留绕过开关**——留口子等于规则可以被一行环境变量取消
     assert "ALLOW_MULTI_COMMIT" not in h, "钩子又长出绕过口子了"
 
@@ -141,12 +140,97 @@ def test_release_assets_tool_is_promoted():
     assert "tools/release_assets.py" in doc, "RELEASE_PROCESS.md 没提资产流水线工具"
 
 
-def test_history_shape_v2_rules():
-    """形态判据本身的规则：1 个 root、禁 merge、收尾提交最多 1 笔。"""
+def test_repository_history_policy():
+    """真实仓库必须满足其显式选择的历史策略。"""
     from release_guard import history_shape
     ok, detail = history_shape()
     assert ok, detail
     assert "root=1" in detail
+
+
+@pytest.fixture
+def history_repo(tmp_path, monkeypatch):
+    import release_guard
+
+    repo = tmp_path / "history"
+    repo.mkdir()
+
+    def git(*args):
+        return subprocess.check_output(
+            ["git", "-C", str(repo), *args], encoding="utf-8").strip()
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.name", "maintainer")
+    git("config", "user.email", "maintainer@example.test")
+    git("commit", "-q", "--allow-empty", "-m", "upstream base")
+    baseline = git("rev-parse", "HEAD")
+    monkeypatch.setitem(release_guard._CWD, "repo", str(repo))
+
+    def configure(policy):
+        folder = repo / ".github"
+        folder.mkdir(exist_ok=True)
+        (folder / "history-policy.json").write_text(json.dumps(policy), encoding="utf-8")
+
+    return repo, git, baseline, configure
+
+
+def test_fork_accepts_linear_work_after_upstream_release(history_repo):
+    from release_guard import history_shape, recovery_hint
+    _, git, baseline, configure = history_repo
+    git("commit", "-q", "--allow-empty", "-m", "upstream closing")
+    git("commit", "-q", "--allow-empty", "--author=contributor <contributor@example.test>",
+        "-m", "fork change")
+    configure({"mode": "fork", "base_commit": baseline})
+    ok, detail = history_shape()
+    assert ok and "后续提交 2 笔" in detail, detail
+    assert "--force" not in recovery_hint()
+    configure({"mode": "upstream"})
+    assert history_shape()[0] is False
+
+
+@pytest.mark.parametrize("policy", [
+    {}, {"mode": "disabled"}, {"mode": "upstream", "extra": True},
+    {"mode": "fork", "base_commit": "1234567"},
+    {"mode": "fork", "base_commit": None},
+])
+def test_invalid_history_configuration_fails(history_repo, policy):
+    from release_guard import history_shape
+    _, _, _, configure = history_repo
+    configure(policy)
+    with pytest.raises(ValueError):
+        history_shape()
+
+
+def test_fork_rejects_unrelated_or_missing_baseline(history_repo):
+    from release_guard import history_shape
+    _, git, _, configure = history_repo
+    unrelated = git("commit-tree", "HEAD^{tree}", "-m", "unrelated root")
+    configure({"mode": "fork", "base_commit": unrelated})
+    ok, detail = history_shape()
+    assert not ok and "祖先" in detail
+    configure({"mode": "fork", "base_commit": "0" * 40})
+    with pytest.raises(subprocess.CalledProcessError):
+        history_shape()
+
+
+def test_fork_rejects_merge_and_shallow_history(history_repo, tmp_path, monkeypatch):
+    import release_guard
+    repo, git, baseline, configure = history_repo
+    configure({"mode": "fork", "base_commit": baseline})
+    git("add", ".github/history-policy.json")
+    git("commit", "-q", "-m", "fork policy")
+    clone = tmp_path / "shallow"
+    subprocess.run(["git", "clone", "-q", "--depth", "1", repo.as_uri(), str(clone)], check=True)
+    with monkeypatch.context() as patch:
+        patch.setitem(release_guard._CWD, "repo", str(clone))
+        ok, detail = release_guard.history_shape()
+        assert not ok and "完整历史" in detail
+    git("checkout", "-q", "-b", "feature")
+    git("commit", "-q", "--allow-empty", "-m", "feature")
+    git("checkout", "-q", "main")
+    git("merge", "-q", "--no-ff", "-m", "merge feature", "feature")
+    ok, detail = release_guard.history_shape()
+    assert not ok and "merge" in detail
 
 
 def test_history_shape_negative_controls():

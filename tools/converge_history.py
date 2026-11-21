@@ -76,6 +76,10 @@ def main(argv=None):
 
     print("当前 HEAD %s · 提交数 %d · root %s" % (head[:7], count, root[:7] or "—"))
     print("目标版本 %s · 树 %s" % (ver, tree_before[:12]))
+    from release_guard import history_policy
+    if history_policy()["mode"] == "fork":
+        print("fork 历史保留上游基线与后续提交，不执行收敛。")
+        return 2 if a.yes else 0
     if count <= 1 and head == root:
         print("已经是单一 root commit，无需收敛。")
         return 0

@@ -3,6 +3,9 @@
 import logging
 import os
 import sys
+from datetime import timedelta
+
+import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -10,6 +13,7 @@ sys.path.insert(0, ROOT)
 import webui  # noqa: E402
 from core.multicity import segments_key  # noqa: E402
 from core.storage import PriceStorage  # noqa: E402
+from support_test_clock import MULTICITY_NOW, freeze_webui_clock  # noqa: E402
 
 SEGS = [{"from": "SHA", "to": "TYO", "date": "2026-11-20"},
         {"from": "TYO", "to": "OSA", "date": "2026-11-23"}]
@@ -30,15 +34,32 @@ class Notifier:
         return self.res
 
 
-def _user(thr=1500, platforms=None):
-    return {"name": "u", "platforms": platforms or ["ctrip"], "routes": [{
-        "from": "SHA", "to": "OSA", "dates": ["2026-11-20", "2026-11-23"],
-        "alert_threshold": thr, "segments": SEGS}]}
+@pytest.fixture(autouse=True)
+def _freeze_alert_clock(monkeypatch):
+    freeze_webui_clock(monkeypatch, MULTICITY_NOW)
+
+
+def _user(thr=1500, platforms=("ctrip",), *, segments=None):
+    segs = SEGS if segments is None else segments
+    return {"name": "u", "platforms": list(platforms), "routes": [{
+        "from": segs[0]["from"], "to": segs[-1]["to"],
+        "dates": [s["date"] for s in segs],
+        "alert_threshold": thr, "segments": segs}]}
+
+
+def _fetched_at(hours_ago=0):
+    return (MULTICITY_NOW - timedelta(hours=hours_ago)).isoformat(
+        sep=" ", timespec="seconds")
+
+
+def _save_price(storage, price, *, hours_ago=0):
+    storage.save_itinerary("ctrip", KEY, SEGS, price, LEGS,
+                           fetched_at=_fetched_at(hours_ago))
 
 
 def _db(tmp_path):
     st = PriceStorage(str(tmp_path / "prices.db"))
-    st.save_itinerary("ctrip", KEY, SEGS, 1298.0, LEGS)
+    _save_price(st, 1298.0)
     return st
 
 
@@ -52,11 +73,13 @@ def test_alerts_once_then_only_on_further_drop(tmp_path):
     assert "多程含税价" in desp and "9C8515" in desp and "MM304" in desp
     assert webui._multicity_alert_round(
         u, n, st, logging.getLogger("mc")) == 0, "同价不得刷屏"
+    assert len(n.sent) == 1
 
-    st.save_itinerary("ctrip", KEY, SEGS, 1200.0, LEGS)
+    _save_price(st, 1200.0)
     assert webui._multicity_alert_round(
         u, n, st, logging.getLogger("mc")) == 1, "继续下探应补推"
     assert len(n.sent) == 2
+    assert "1200" in n.sent[1][0]
 
 
 def test_above_threshold_resets_so_next_crossing_alerts(tmp_path):
@@ -64,11 +87,11 @@ def test_above_threshold_resets_so_next_crossing_alerts(tmp_path):
     u = _user()
     assert webui._multicity_alert_round(
         u, n, st, logging.getLogger("mc")) == 1
-    st.save_itinerary("ctrip", KEY, SEGS, 1600.0, LEGS)
+    _save_price(st, 1600.0)
     assert webui._multicity_alert_round(
         u, n, st, logging.getLogger("mc")) == 0
     assert st.get_alert_state("mc|u|%s|1500" % KEY) == 0
-    st.save_itinerary("ctrip", KEY, SEGS, 1400.0, LEGS)
+    _save_price(st, 1400.0)
     assert webui._multicity_alert_round(
         u, n, st, logging.getLogger("mc")) == 1
     assert len(n.sent) == 2
@@ -85,11 +108,9 @@ OPEN_LEGS = [{"flight_no": "9C8515", "from": "SHA", "to": "TYO",
 def test_open_jaw_alert_title_breaks_chain(tmp_path):
     """开口程提醒标题也不能画成 SHA→TYO→SHA（第二段从 OSA 出发）。"""
     st = PriceStorage(str(tmp_path / "prices.db"))
-    st.save_itinerary("ctrip", segments_key(OPEN), OPEN, 2184.0, OPEN_LEGS)
-    u = {"name": "u", "platforms": ["ctrip"], "routes": [{
-        "from": "SHA", "to": "SHA",
-        "dates": ["2026-11-20", "2026-11-26"],
-        "alert_threshold": 2500, "segments": OPEN}]}
+    st.save_itinerary("ctrip", segments_key(OPEN), OPEN, 2184.0, OPEN_LEGS,
+                      fetched_at=_fetched_at())
+    u = _user(2500, segments=OPEN)
     n = Notifier()
     assert webui._multicity_alert_round(
         u, n, st, logging.getLogger("mc")) == 1
@@ -99,22 +120,19 @@ def test_open_jaw_alert_title_breaks_chain(tmp_path):
 
 
 def test_expired_first_segment_never_alerts(tmp_path):
-    old = [{"from": "SHA", "to": "TYO", "date": "2020-01-01"},
-           {"from": "TYO", "to": "OSA", "date": "2020-01-03"}]
-    old_legs = [{"flight_no": "X1", "from": "SHA", "to": "TYO",
-                 "date": "2020-01-01"},
-                {"flight_no": "X2", "from": "TYO", "to": "OSA",
-                 "date": "2020-01-03"}]
+    yesterday = (MULTICITY_NOW.date() - timedelta(days=1)).isoformat()
+    old = [dict(SEGS[0], date=yesterday), SEGS[1]]
+    old_legs = [dict(LEGS[0], date=yesterday), LEGS[1]]
     st = PriceStorage(str(tmp_path / "prices.db"))
-    st.save_itinerary("ctrip", segments_key(old), old, 900.0, old_legs)
-    u = {"name": "u", "platforms": ["ctrip"], "routes": [{
-        "from": "SHA", "to": "OSA",
-        "dates": ["2020-01-01", "2020-01-03"],
-        "alert_threshold": 1500, "segments": old}]}
+    key = segments_key(old)
+    st.save_itinerary("ctrip", key, old, 900.0, old_legs,
+                      fetched_at=_fetched_at())
+    u = _user(segments=old)
     n = Notifier()
     assert webui._multicity_alert_round(
         u, n, st, logging.getLogger("mc")) == 0
     assert n.sent == [], "首段已过期不得按隔夜行提醒"
+    assert st.get_alert_state("mc|u|%s|1500" % key) is None
 
 
 def test_no_threshold_stale_and_rejected_are_silent(tmp_path):
@@ -125,12 +143,12 @@ def test_no_threshold_stale_and_rejected_are_silent(tmp_path):
         _user(platforms=["qunar"]), n, st,
         logging.getLogger("mc")) == 0, "未勾携程的用户不得收到多程提醒"
 
-    st.save_itinerary("ctrip", KEY, SEGS, 900.0, LEGS,
-                      fetched_at="2020-01-01 00:00:00")
+    _save_price(st, 900.0, hours_ago=7)
     assert webui._multicity_alert_round(
         _user(), n, st, logging.getLogger("mc")) == 0, "过期行不得提醒"
+    assert n.sent == []
 
-    st.save_itinerary("ctrip", KEY, SEGS, 1000.0, LEGS)
+    _save_price(st, 1000.0)
     bad = Notifier(res=False)
     assert webui._multicity_alert_round(
         _user(), bad, st, logging.getLogger("mc")) == 0
@@ -140,3 +158,4 @@ def test_no_threshold_stale_and_rejected_are_silent(tmp_path):
     ok = Notifier()
     assert webui._multicity_alert_round(
         _user(), ok, st, logging.getLogger("mc")) == 1
+    assert len(ok.sent) == 1
